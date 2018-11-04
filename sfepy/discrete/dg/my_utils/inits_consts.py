@@ -98,20 +98,20 @@ def four_step_q(x):
 #------------------------#
 def const_u(x):
     """
-    piecewise constant (-inf, a],(a, a + 5](a+5, inf)
+
     :param x:
     :return:
     """
-    return nm.ones((nm.size(x), 1)) * 0
+    return nm.ones(nm.shape(x))
 
 
 def const_q(x):
     """
-    piecewise constant (-inf, a],(a, a + 5](a+5, inf)
+
     :param x:
     :return:
     """
-    return nm.ones(nm.size(x)) * .5
+    return nm.ones(nm.shape(x))
 
 
 #------------------------------#

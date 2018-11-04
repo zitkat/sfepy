@@ -57,7 +57,8 @@ class AdvIntDGTerm(DGTerm):
 
 class AdvFluxDGTerm(DGTerm):
     """
-    So far Lax-Friedrichs flux
+    So far Lax-Friedrichs flux for a*u,
+    a can be variable sample over domain
     """
 
     def __init__(self, mesh, a):
@@ -107,5 +108,87 @@ class AdvFluxDGTerm(DGTerm):
         else:
             val = None
             iels = None
+
+        return val, iels
+
+
+class HypfFluxDGTerm(DGTerm):
+    """
+    So far Lax-Friedrichs flux term for general f(u)
+    """
+
+    def __init__(self, mesh, f, df):
+        DGTerm.__init__(self, mesh)
+        self.f = f
+        self.df = df
+        self.vvar = None
+        self.diff_var = None
+
+    def evaluate(self, mode="weak", diff_var=None,
+                 standalone=True, ret_status=False, **kwargs):
+
+        u = kwargs.pop('u', None)
+        f = self.f
+        df = self.df
+        if diff_var == self.diff_var:
+
+            # for Legendre basis integral of higher order
+            # functions of the basis is zero,
+            # hence we calculate integral
+            #
+            # int_{j-1/2}^{j+1/2} f(u)dx
+            #
+            # only from the zero order function, over [-1, 1] - hence the 2
+            # TODO use reconstructed solution for integral
+            intg =  f(u[0, 1:-1].T) * 2
+
+            #  the Lax-Friedrichs flux is
+            #       F(a, b) = 1/2(f(a) + f(b)) + max(f'(w)) / 2 * (a - b)
+            # in our case a and b are values to the left and right of the element boundary
+            # for Legendre basis these are:
+            # u_left = U_0 + U_1 + U_2 + ...
+            # u_right = U_0 - U_1 + U_2 + ... = sum_0^{order} (-1)^p * U_p
+
+            # left flux is calculated in j_-1/2  where U(j-1) and U(j) meet
+            # right flux is calculated in j_+1/2 where U(j) and U(j+1) meet
+            # TODO use reconstructed solution for flux
+            fl = (f(u[0, :-2]) + f(u[1, :-2]) +
+                 (f(u[0, 1:-1]) - f(u[1, 1:-1]))).T / 2 + \
+                 nm.abs(nm.max(df(u[0, 1:-1]))) * (u[0, :-2] + u[1, :-2] -
+                                  (u[0, 1:-1] - u[1, 1:-1])).T / 2
+
+            fp = (f(u[0, 1:-1]) + f(u[1, 1:-1]) +
+                 (f(u[0, 2:]) - f(u[1, 2:]))).T / 2 + \
+                 nm.abs(nm.max(df(u[0, 1:-1]))) * (u[0, 1:-1] + u[1, 1:-1] -
+                                  (u[0, 2:] - u[1, 2:])).T / 2
+
+            val = nm.vstack((fl - fp, - fl - fp + intg))
+
+            # placement is simple, but getting the values requires looping over neighbours
+            iels = ([0, 1], nm.arange(len(self.mesh.coors) - 1))  # just fill the vector
+        else:
+            val = None
+            iels = None
+
+        return val, iels
+
+
+class DiffFluxDGTerm(DGTerm):
+
+
+    def __init__(self, mesh, coef):
+        DGTerm.__init__(self, mesh)
+        self.coef = coef
+
+    def evaluate(self, mode="weak", diff_var="u",
+                 standalone=True, ret_status=False, **kwargs):
+
+        u = kwargs.pop('u', None)
+
+        # TODO get flux term for diffusion
+        vals = val = nm.vstack((u, -u))
+
+        # placement is simple, but getting the values requires looping over neighbours
+        iels = ([0, 1], nm.arange(len(self.mesh.coors) - 1))  # just fill the vector
 
         return val, iels

@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 from sfepy.discrete.fem import Mesh
 from sfepy.discrete.fem.meshio import UserMeshIO
 from sfepy.base.base import Struct
+from toolz import identity
 
 # local import
-from dg_terms import AdvFluxDGTerm, AdvIntDGTerm
+from dg_terms import AdvFluxDGTerm, AdvIntDGTerm, HypfFluxDGTerm
 from dg_equation import Equation
 from dg_tssolver import TSSolver, RK3Solver
 from dg_basis import LegendrePolySpace
@@ -17,7 +18,7 @@ from my_utils.visualizer import animate1d, sol_frame
 
 X1 = 0.
 XN1 = 1.
-n_nod = 100
+n_nod = 500
 n_el = n_nod - 1
 coors = nm.linspace(X1, XN1, n_nod).reshape((n_nod, 1))
 conn = nm.arange(n_nod, dtype=nm.int32).repeat(2)[1:-1].reshape((-1, 2))
@@ -28,11 +29,11 @@ mesh = Mesh.from_data('advection_1d', coors, None,
 
 a = 1.0
 ts = 0
-te = 2
-tn = 800
+te = 1
+tn = 1500
 
 IntT = AdvIntDGTerm(mesh)
-FluxT = AdvFluxDGTerm(mesh, a)
+FluxT = HypfFluxDGTerm(mesh, lambda u: u**2/2, lambda u: u)
 
 eq = Equation((IntT, FluxT))
 
