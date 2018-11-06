@@ -18,6 +18,26 @@ class TSSolver:
         self.initial_cond = self.sampleIC(self.mesh, ic, self.intGauss2, self.basis)
         self.boundary_cond = bc
 
+    def initialize(self, t0, tend, tsteps):
+        dt = float(tend - t0) / tsteps
+        dx = nm.max(self.mesh.coors[1:] - self.mesh.coors[:-1])
+        dtdx = dt / dx
+        maxa = abs(nm.max(self.equation.terms[1].a(self.mesh.coors)))
+        print("Space divided into {0} cells, {1} steps, step size is {2}".format(self.mesh.n_el, len(self.mesh.coors),
+                                                                                 dx))
+        print("Time divided into {0} nodes, {1} steps, step size is {2}".format(tsteps - 1, tsteps, dt))
+        print("Courant number c = max(abs(u)) * dt/dx = {0}".format(maxa * dtdx))
+        A = nm.zeros((2, self.mesh.n_el, self.mesh.n_el), dtype=nm.float64)
+        b = nm.zeros((2, self.mesh.n_el, 1), dtype=nm.float64)
+        u = nm.zeros((2, self.mesh.n_el + 2, tsteps, 1), dtype=nm.float64)
+
+        # bc
+        u[:, 0, 0] = self.boundary_cond["left"]
+        u[:, -1, 0] = self.boundary_cond["right"]
+        # ic
+        u[:, 1:-1, 0] = self.initial_cond
+        return A, b, dt, u
+
     # Move to problem class?
     def sampleIC(self, mesh, ic, quad, basis):
         sic = nm.zeros((2, self.mesh.n_el, 1), dtype=nm.float64)
@@ -72,79 +92,28 @@ class TSSolver:
         nu = nm.copy(u)
         for l in range(1, 0, -1):
             tilu = minmod(nu[l, 1:-1][idx],
-                                   nu[l-1, 2:][idx] - nu[l-1, 1:-1][idx],
-                                   nu[l-1, 1:-1][idx] - nu[l-1, :-2][idx])
+                          nu[l-1, 2:][idx] - nu[l-1, 1:-1][idx],
+                          nu[l-1, 1:-1][idx] - nu[l-1, :-2][idx])
             idx = tilu != nu
             nu[l, 1:-1][idx] = tilu[idx]
         return nu
 
     def solve(self, t0, tend, tsteps=10):
-        print("Running testing solver: it does not solve anything, only tests shapes and types of data!")
-        A = nm.zeros((2, self.mesh.n_el, self.mesh.n_el), dtype=nm.float64)
-        b = nm.zeros((2, self.mesh.n_el-1, 1), dtype=nm.float64)
-        u = nm.zeros((2, self.mesh.n_nod + 1 , 1), dtype=nm.float64)
-
-        # ic
-        u[0, 1:-1] = self.initial_cond
-        u[1, 1:-1] = self.initial_cond
-
-        # bc
-        u[0, 0] = self.boundary_cond["left"]
-        u[0, -1] = self.boundary_cond["right"]
-        u[1, 0] = self.boundary_cond["left"]
-        u[1, -1] = self.boundary_cond["right"]
-
-        self.equation.evaluate(dw_mode="matrix", asm_obj=A, diff_var="u")
-        self.equation.evaluate(dw_mode="vector", asm_obj=b, diff_var=None, u=u)
-
-        # print(A)
-        # print(b)
-
-        plt.figure("A[0]")
-        plt.imshow(A[0])
-        plt.figure("A[1]")
-        plt.imshow(A[1])
-
-        plt.figure("b")
-        plt.plot(b[0], label="b0")
-        plt.plot(b[1], label="b1")
-        plt.legend()
-
-        u[0, 1:-1] = dot(nm.linalg.inv(A[0]), b[0])
-        u[1, 1:-1] = dot(nm.linalg.inv(A[1]), b[1])
-
-        # print(u)
-        plt.figure("u")
-        plt.plot(u[0], label="u0")
-        plt.plot(u[1], label="u1")
-        plt.legend()
-        plt.show()
+        raise NotImplemented
 
 
 class RK3Solver(TSSolver):
+    """
+    Runge-Kutta of order 3, with limiter
+    """
 
     def solve(self, t0, tend, tsteps=10):
-        dt = float(tend - t0) / tsteps
-        dx = nm.max(self.mesh.coors[1:] - self.mesh.coors[:-1])
-        dtdx = dt/dx
-        # maxa = abs(self.equation.terms[1].a)
 
-        print("Space divided into {0} cells, {1} steps, step size is {2}".format(self.mesh.n_el, len(self.mesh.coors), dx))
-        print("Time divided into {0} nodes, {1} steps, step size is {2}".format(tsteps - 1, tsteps, dt))
-        # print("Courant number c = max(abs(u)) * dt/dx = {0}".format(maxa * dtdx))
+        A, b, dt, u = self.initialize(t0, tend, tsteps)
 
-        A  = nm.zeros((2, self.mesh.n_el, self.mesh.n_el), dtype=nm.float64)
-        b  = nm.zeros((2, self.mesh.n_el, 1), dtype=nm.float64)
-        u  = nm.zeros((2, self.mesh.n_el + 2, tsteps, 1), dtype=nm.float64)
+        # setup RK3 specific arrays
         u1 = nm.zeros((2, self.mesh.n_el + 2, 1), dtype=nm.float64)
         u2 = nm.zeros((2, self.mesh.n_el + 2, 1), dtype=nm.float64)
-
-        # bc
-        u[:, 0, 0] = self.boundary_cond["left"]
-        u[:, -1, 0] = self.boundary_cond["right"]
-
-        # ic
-        u[:, 1:-1, 0] = self.initial_cond
 
         for it in range(1, tsteps):
             # ----1st stage----
@@ -159,8 +128,11 @@ class RK3Solver(TSSolver):
             self.equation.evaluate(dw_mode="vector", asm_obj=b, diff_var=None, u=u[:, :, it-1])
 
             # get update u1
-            u1[0, 1:-1] = u[0, 1:-1, it-1] + dt * b[0] / nm.diag(A[0])[:, None]
-            u1[1, 1:-1] = u[1, 1:-1, it-1] + dt * b[1] / nm.diag(A[1])[:, None]
+            # maybe use: for more general cases
+            #                                     dot(nm.linalg.inv(A[0]), b[0])
+            #                                     dot(nm.linalg.inv(A[1]), b[1])
+            u1[0, 1:-1] = u[0, 1:-1, it-1] + dt * b[0] / nm.diag(A[0])[:, nax]
+            u1[1, 1:-1] = u[1, 1:-1, it-1] + dt * b[1] / nm.diag(A[1])[:, nax]
 
             # limit
             u1 = self.limiter(u1)
@@ -178,9 +150,9 @@ class RK3Solver(TSSolver):
 
             # get update u2
             u2[0, 1:-1] = (3 * u[0, 1:-1, it - 1] + u1[0, 1:-1]
-                           + dt * b[0] / nm.diag(A[0])[:, None]) / 4
+                           + dt * b[0] / nm.diag(A[0])[:, nax]) / 4
             u2[1, 1:-1] = (3 * u[1, 1:-1, it - 1] + u1[1, 1:-1]
-                           + dt * b[1] / nm.diag(A[1])[:, None]) / 4
+                           + dt * b[1] / nm.diag(A[1])[:, nax]) / 4
 
             # limit
             u2 = self.limiter(u2)
@@ -194,11 +166,43 @@ class RK3Solver(TSSolver):
 
             # get update u3
             u[0, 1:-1, it] = (u[0, 1:-1, it - 1] + 2 * u2[0, 1:-1]
-                              + 2*dt * b[0] / nm.diag(A[0])[:, None]) / 3
+                              + 2*dt * b[0] / nm.diag(A[0])[:, nax]) / 3
             u[1, 1:-1, it] = (u[1, 1:-1, it - 1] + 2 * u2[1, 1:-1]
-                              + 2*dt * b[1] / nm.diag(A[1])[:, None]) / 3
+                              + 2*dt * b[1] / nm.diag(A[1])[:, nax]) / 3
 
             # limit
+            u[:, :, it] = self.limiter(u[:, :, it])
+
+        return u, dt
+
+class EUSolver(TSSolver):
+    """
+    Euler method with limiter
+    """
+
+    def solve(self, t0, tend, tsteps=10):
+        """
+
+        :param t0:
+        :param tend:
+        :param tsteps:
+        :return:
+        """
+        A, b, dt, u = self.initialize(t0, tend, tsteps)
+        self.equation.terms[1].get_state_variables()[0].setup_dof_info()
+        di = self.equation.terms[1].get_state_variables()[0].di
+        self.equation.terms[1].get_state_variables()[0].setup_initial_conditions(self.ics)
+
+        for it in range(1, tsteps):
+            A[:] = 0
+            b[:] = 0
+
+            self.equation.evaluate(dw_mode="matrix", asm_obj=A, diff_var="u")
+            self.equation.evaluate(dw_mode="vector", asm_obj=b, diff_var="u")
+
+            u[0, 1:-1, it] = u[0, 1:-1, it - 1] + dt * b[0] / nm.diag(A[0])[:, nax]
+            u[1, 1:-1, it] = u[1, 1:-1, it - 1] + dt * b[1] / nm.diag(A[1])[:, nax]
+
             u[:, :, it] = self.limiter(u[:, :, it])
 
         return u, dt
