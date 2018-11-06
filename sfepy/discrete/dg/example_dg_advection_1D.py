@@ -10,7 +10,7 @@ from toolz import identity
 # local import
 from dg_terms import AdvFluxDGTerm, AdvIntDGTerm, HypfFluxDGTerm
 from dg_equation import Equation
-from dg_tssolver import TSSolver, RK3Solver
+from dg_tssolver import TSSolver, RK3Solver, EUSolver
 from dg_basis import LegendrePolySpace
 
 from my_utils.inits_consts import left_par_q, gsmooth, const_u, ghump, superic
@@ -34,6 +34,7 @@ tn = 1500
 
 IntT = AdvIntDGTerm(mesh)
 FluxT = HypfFluxDGTerm(mesh, lambda u: u**2/2, lambda u: u)
+FluxT = AdvFluxDGTerm(mesh, a)
 
 eq = Equation((IntT, FluxT))
 
@@ -44,7 +45,7 @@ bc = {"left" : 0,
 geometry = Struct(n_vertex=2,
                   dim=1,
                   coors=coors.copy())
-tss = RK3Solver(eq, ic, bc, TSSolver.moment_limiter, LegendrePolySpace("legb", geometry, 1))
+tss = EUSolver(eq, ic, bc, TSSolver.moment_limiter, LegendrePolySpace("legb", geometry, 1))
 
 u, dt = tss.solve(ts, te, tn)
 sic = tss.initial_cond

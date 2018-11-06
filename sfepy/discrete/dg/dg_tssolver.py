@@ -22,7 +22,7 @@ class TSSolver:
         dt = float(tend - t0) / tsteps
         dx = nm.max(self.mesh.coors[1:] - self.mesh.coors[:-1])
         dtdx = dt / dx
-        maxa = abs(nm.max(self.equation.terms[1].a(self.mesh.coors)))
+        maxa = self.equation.terms[1].get_stab_cond(ic=self.initial_cond)
         print("Space divided into {0} cells, {1} steps, step size is {2}".format(self.mesh.n_el, len(self.mesh.coors),
                                                                                  dx))
         print("Time divided into {0} nodes, {1} steps, step size is {2}".format(tsteps - 1, tsteps, dt))
@@ -189,16 +189,13 @@ class EUSolver(TSSolver):
         :return:
         """
         A, b, dt, u = self.initialize(t0, tend, tsteps)
-        self.equation.terms[1].get_state_variables()[0].setup_dof_info()
-        di = self.equation.terms[1].get_state_variables()[0].di
-        self.equation.terms[1].get_state_variables()[0].setup_initial_conditions(self.ics)
 
         for it in range(1, tsteps):
             A[:] = 0
             b[:] = 0
 
             self.equation.evaluate(dw_mode="matrix", asm_obj=A, diff_var="u")
-            self.equation.evaluate(dw_mode="vector", asm_obj=b, diff_var="u")
+            self.equation.evaluate(dw_mode="vector", asm_obj=b, diff_var=None, u=u[:, :, it - 1])
 
             u[0, 1:-1, it] = u[0, 1:-1, it - 1] + dt * b[0] / nm.diag(A[0])[:, nax]
             u[1, 1:-1, it] = u[1, 1:-1, it - 1] + dt * b[1] / nm.diag(A[1])[:, nax]
