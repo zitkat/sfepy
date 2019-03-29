@@ -19,7 +19,7 @@ from sfepy.discrete.fem.meshio import VTKMeshIO
 from sfepy.base.ioutils import ensure_path
 
 # local imports
-from sfepy.discrete.dg.dg_terms import AdvFluxDGTerm, ScalarDotMGradScalarDGTerm
+from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm, ScalarDotMGradScalarDGTerm
 from sfepy.discrete.dg.dg_tssolver import TVDRK3StepSolver, RK4StepSolver
 from sfepy.discrete.dg.dg_field import DGField
 
@@ -81,10 +81,11 @@ v = FieldVariable('v', 'test', field, primary_var_name='u')
 MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u", integral, omega, u=u, v=v)
 
 a = Material('a', val=[velo])
-StiffT = ScalarDotMGradScalarDGTerm("adv_stiff(a.val, v, u)", "a.val, u, v", integral, omega,
+StiffT = ScalarDotMGradScalarDGTerm("adv_stiff(a.val, v, u)", "a.val, u[-1], v", integral, omega,
                                     u=u, v=v, a=a)
 
-FluxT = AdvFluxDGTerm(integral, omega, u=u, v=v, a=a)
+alpha = Material('alpha', val=[.0])
+FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "alpha.val, u[-1], v, a.val", integral, omega, u=u, v=v, a=a, alpha=alpha)
 
 eq = Equation('balance', MassT + StiffT - FluxT)
 eqs = Equations([eq])
@@ -119,16 +120,8 @@ state0 = pb.get_initial_state()
 #------------------
 #| Create limiter |
 #------------------
-from sfepy.discrete.dg.dg_field import get_unraveler, get_raveler
-from sfepy.discrete.dg.dg_limiters import moment_limiter_1D
-
-
-def limiter(vec):
-    # TODO unify shapes for limiter
-    u = get_unraveler(field.n_el_nod, field.n_cell)(vec).swapaxes(0, 1)
-    u = moment_limiter_1D(u)
-    rvec = get_raveler(field.n_el_nod, field.n_cell)(u.swapaxes(0, 1))
-    return rvec[:, 0]
+from sfepy.discrete.dg.dg_limiters import Moment1DLimiter
+limiter = Moment1DLimiter(field.n_el_nod, field.n_cell)
 
 #------------------
 #| Create solver |

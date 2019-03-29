@@ -23,13 +23,13 @@ from sfepy.terms.terms_dot import ScalarDotMGradScalarTerm, DotProductVolumeTerm
 
 
 # local import
-from dg_terms import AdvFluxDGTerm, ScalarDotMGradScalarDGTerm
+from dg_terms import AdvectDGFluxTerm
 from dg_tssolver import EulerStepSolver, TVDRK3StepSolver
 from dg_field import DGField
 
 from my_utils.inits_consts import left_par_q, gsmooth, const_u, ghump, superic
 
-mesh = gen_block_mesh((1., 1.), (20, 20), (0.5, 0.5))
+mesh = gen_block_mesh((1., 1.), (50, 50), (0.5, 0.5))
 outfile = "output/mesh/tens_2D_mesh.vtk"
 meshio = VTKMeshIO(outfile)
 meshio.write(outfile, mesh)
@@ -43,7 +43,7 @@ max_velo = nm.max(nm.linalg.norm(velo))
 
 #vvvvvvvvvvvvvvvv#
 approx_order = 2
-CFL = .5
+CFL = .8
 #^^^^^^^^^^^^^^^^#
 
 t0 = 0
@@ -74,10 +74,11 @@ v = FieldVariable('v', 'test', field, primary_var_name='u')
 MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u", integral, omega, u=u, v=v)
 
 a = Material('a', val=[velo])
-StiffT = ScalarDotMGradScalarDGTerm("adv_stiff(a.val, u, v)", "a.val, u, v", integral, omega,
+StiffT = ScalarDotMGradScalarTerm("adv_stiff(a.val, u, v)", "a.val, u[-1], v", integral, omega,
                                     u=u, v=v, a=a, mode="grad_virtual")
 
-FluxT = AdvFluxDGTerm(integral, omega, u=u, v=v, a=a)
+alpha = Material('alpha', val=[.0])
+FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "alpha.val, u[-1], v, a.val", integral, omega, u=u, v=v, a=a, alpha=alpha)
 
 eq = Equation('balance', MassT + StiffT - FluxT)
 eqs = Equations([eq])
