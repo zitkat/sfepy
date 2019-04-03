@@ -2,8 +2,6 @@ import numpy as nm
 import matplotlib.pyplot as plt
 
 # sfepy imports
-from sfepy.discrete.fem.meshio import VTKMeshIO
-from sfepy.base.ioutils import ensure_path
 from sfepy.discrete.fem import Mesh, FEDomain
 from sfepy.base.base import Struct
 from sfepy.base.base import IndexedStruct
@@ -17,7 +15,8 @@ from sfepy.solvers.nls import Newton
 from sfepy.solvers.ts_solvers import SimpleTimeSteppingSolver
 
 from sfepy.terms.terms_dot import ScalarDotMGradScalarTerm, DotProductVolumeTerm
-
+from sfepy.discrete.fem.meshio import VTKMeshIO
+from sfepy.base.ioutils import ensure_path
 
 # local imports
 from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm
@@ -30,13 +29,14 @@ from sfepy.discrete.variables import DGFieldVariable
 from sfepy.discrete.dg.my_utils.inits_consts import \
     left_par_q, gsmooth, const_u, ghump, superic
 from sfepy.discrete.dg.my_utils.visualizer import load_1D_vtks, plot1D_DG_sol
+from sfepy.discrete.dg.my_utils.read_plot_1Ddata import clear_output_folder
 
 # Setup output names
 domain_name = "domain_1D"
 output_folder = "output/adv_1D/"
 output_folder_mesh = "output/mesh"
 save_timestn = 100
-
+clear_output_folder(output_folder)
 
 #------------
 #| Get mesh |
@@ -80,15 +80,18 @@ u = FieldVariable('u', 'unknown', field, history=1)
 v = FieldVariable('v', 'test', field, primary_var_name='u')
 
 
-MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u", integral, omega, u=u, v=v)
+MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u",
+                             integral, omega, u=u, v=v)
 
 velo = 1.0
 a = Material('a', val=[velo])
-StiffT = ScalarDotMGradScalarTerm("adv_stiff(a.val, v, u)", "a.val, u[-1], v", integral, omega,
-                                    u=u, v=v, a=a)
+# TODO u and v are flipped what now?!
+StiffT = ScalarDotMGradScalarTerm("adv_stiff(a.val, v, u)", "a.val, u[-1], v",
+                                  integral, omega, u=u, v=v, a=a)
 
 alpha = Material('alpha', val=[.0])
-FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "alpha.val, u[-1], v, a.val", integral, omega, u=u, v=v, a=a, alpha=alpha)
+FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
+                         integral, omega, u=u, v=v, a=a, alpha=alpha)
 
 eq = Equation('balance', MassT + StiffT - FluxT)
 eqs = Equations([eq])
@@ -152,8 +155,8 @@ tss = EulerStepSolver({'t0': t0, 't1': t1, 'n_step': tn},
                          nls=nls, context=pb, verbose=True)
                         # ,post_stage_hook=limiter)
 #
-tss = TVDRK3StepSolver({'t0': t0, 't1': t1, 'n_step': tn},
-                         nls=nls, context=pb, verbose=True)
+# tss = TVDRK3StepSolver({'t0': t0, 't1': t1, 'n_step': tn},
+#                          nls=nls, context=pb, verbose=True)
 
 # tss = RK4StepSolver({'t0': t0, 't1': t1, 'n_step': tn},
 #                          nls=nls, context=pb, verbose=True, post_stage_hook=limiter)
@@ -185,26 +188,29 @@ pb.save_state("output/adv_1D/domain_1D_end.vtk", state=state_end)
 #----------
 #| Plot 1D|
 #----------
-lmesh, u = load_1D_vtks("./output/adv_1D", "domain_1D", order=approx_order)
-plot1D_DG_sol(lmesh, t0, t1, u, tn=min(save_timestn, tn), ic=ic_wrap,
-              delay=100, polar=False)
+# lmesh, u = load_1D_vtks("./output/adv_1D", "domain_1D", order=approx_order)
+# plot1D_DG_sol(lmesh, t0, t1, u, tn=30, ic=ic_wrap,
+#               delay=100, polar=False)
+#
+# from sfepy.discrete.dg.dg_field import get_unraveler, get_raveler
+# from sfepy.discrete.dg.my_utils.visualizer import \
+#     load_state_1D_vtk, plot_1D_legendre_dofs, reconstruct_legendre_dofs
+# coors, u_end = load_state_1D_vtk("output/adv_1D/domain_1D_end.vtk", order=approx_order)
+#
+#
+# u_start = get_unraveler(field.n_el_nod, field.n_cell)(state0.vec).swapaxes(0, 1)[..., None]
+# # u_end = get_unraveler(field.n_el_nod, field.n_cell)(state_end.vec).swapaxes(0, 1)[..., None]
+#
+#
+# plot_1D_legendre_dofs(coors, [u_start.swapaxes(0, 1)[:, :, 0], u_end.swapaxes(0, 1)[:, :, 0]])
+#
+# plt.figure("reconstructed")
+# ww_s, xx = reconstruct_legendre_dofs(coors, None, u_end)
+# ww_e, _ = reconstruct_legendre_dofs(coors, None, u_start)
+#
+# plt.plot(xx, ww_s[:, 0])
+# plt.plot(xx, ww_e[:, 0])
+# plt.show()
+from sfepy.discrete.dg.my_utils.read_plot_1Ddata import load_and_plot_fun
 
-from sfepy.discrete.dg.dg_field import get_unraveler, get_raveler
-from sfepy.discrete.dg.my_utils.visualizer import \
-    load_state_1D_vtk, plot_1D_legendre_dofs, reconstruct_legendre_dofs
-coors, u_end = load_state_1D_vtk("output/adv_1D/domain_1D_end.vtk", order=approx_order)
-
-
-u_start = get_unraveler(field.n_el_nod, field.n_cell)(state0.vec).swapaxes(0, 1)[..., None]
-# u_end = get_unraveler(field.n_el_nod, field.n_cell)(state_end.vec).swapaxes(0, 1)[..., None]
-
-
-plot_1D_legendre_dofs(coors, [u_start.swapaxes(0, 1)[:, :, 0], u_end.swapaxes(0, 1)[:, :, 0]])
-
-plt.figure("reconstructed")
-ww_s, xx = reconstruct_legendre_dofs(coors, None, u_end)
-ww_e, _ = reconstruct_legendre_dofs(coors, None, u_start)
-
-plt.plot(xx, ww_s[:, 0])
-plt.plot(xx, ww_e[:, 0])
-plt.show()
+load_and_plot_fun(output_folder, domain_name, t0, t1, min(tn, save_timestn), approx_order, ic_fun)
