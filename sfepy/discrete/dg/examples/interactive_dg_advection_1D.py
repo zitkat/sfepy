@@ -3,13 +3,12 @@ import matplotlib.pyplot as plt
 
 # sfepy imports
 from sfepy.discrete.fem import Mesh, FEDomain
+from sfepy.discrete.fem.meshio import UserMeshIO
 from sfepy.base.base import Struct
 from sfepy.base.base import IndexedStruct
-
 from sfepy.discrete import (FieldVariable, Material, Integral, Function,
                             Equation, Equations, Problem)
 from sfepy.discrete.conditions import InitialCondition, EssentialBC, Conditions
-
 from sfepy.solvers.ls import ScipyDirect
 from sfepy.solvers.nls import Newton
 from sfepy.solvers.ts_solvers import SimpleTimeSteppingSolver
@@ -23,7 +22,6 @@ from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm
 from sfepy.discrete.dg.dg_tssolver import TVDRK3StepSolver, RK4StepSolver, EulerStepSolver
 from sfepy.discrete.dg.dg_field import DGField
 from sfepy.discrete.dg.dg_limiters import IdentityLimiter, Moment1DLimiter
-from sfepy.discrete.variables import DGFieldVariable
 
 
 from sfepy.discrete.dg.my_utils.inits_consts import \
@@ -43,7 +41,7 @@ clear_output_folder(output_folder)
 #------------
 X1 = 0.
 XN = 1.
-n_nod = 100
+n_nod = 20
 n_el = n_nod - 1
 coors = nm.linspace(X1, XN, n_nod).reshape((n_nod, 1))
 conn = nm.arange(n_nod, dtype=nm.int32).repeat(2)[1:-1].reshape((-1, 2))
@@ -96,6 +94,7 @@ FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
 eq = Equation('balance', MassT + StiffT - FluxT)
 eqs = Equations([eq])
 
+
 #------------------------------
 #| Create bounrady conditions |
 #------------------------------
@@ -121,7 +120,6 @@ pb = Problem('advection', equations=eqs, conf=Struct(options={"save_times": save
 pb.setup_output(output_dir="output/adv_1D")  # , output_format="msh")
 pb.set_bcs(ebcs=Conditions([left_fix_u]))
 pb.set_ics(Conditions([ics]))
-
 
 state0 = pb.get_initial_state()
 pb.save_state("output/adv_1D/domain_1D_start.vtk", state=state0)
