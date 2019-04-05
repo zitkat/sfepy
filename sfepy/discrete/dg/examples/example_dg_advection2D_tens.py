@@ -1,11 +1,11 @@
 from sfepy.discrete.dg.examples.example_dg_common import *
 
-example_name = "adv_12D_simp"
+example_name = "adv_2D_tens"
 dim = int(example_name[example_name.index("D") - 1])
 
-filename_mesh = "mesh/simp_12D_mesh.vtk"
+filename_mesh = "mesh/tens_2D_mesh.vtk"
 
-approx_order = 0
+approx_order = 3
 t0 = 0.
 t1 = .2
 CFL = .4
@@ -15,8 +15,7 @@ CFL = .4
 angle = - nm.pi/5
 rotm = nm.array([[nm.cos(angle),  -nm.sin(angle)],
                  [nm.sin(angle),  nm.cos(angle)]])
-velo = nm.array([[1., 0.]]).T
-# velor = nm.sum(rotm.T * nm.array([1., 0.]), axis=-1)[:, None]
+velo = nm.sum(rotm.T * nm.array([1., 0.]), axis=-1)[:, None]
 materials = {
     'a' : ({'val': [velo], '.flux': 0.0},),
 }
@@ -35,7 +34,7 @@ variables = {
 }
 
 def get_ic(x, ic=None):
-    return gsmooth(x[..., 0:1])# * gsmooth(x[..., 1:])
+    return gsmooth(x[..., 0:1]) * gsmooth(x[..., 1:])
 
 functions = {
     'get_ic' : (get_ic,)
