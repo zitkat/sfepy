@@ -15,6 +15,7 @@ from sfepy.discrete.fem.poly_spaces import PolySpace
 from sfepy.discrete.fem.mappings import VolumeMapping
 from sfepy.base.base import (get_default, output, assert_,
                              Struct, basestr, IndexedStruct)
+from sfepy.discrete.variables import Variable, Variables
 
 # local imports
 from sfepy.discrete.dg.dg_basis import LegendrePolySpace, LegendreSimplexPolySpace, LegendreTensorProductPolySpace
@@ -457,7 +458,6 @@ class DGField(Field):
 
         return facet_neighbours
 
-
     def get_region_info(self, region):
         """
         Extracts information about region needed in various methods of DGField
@@ -472,7 +472,6 @@ class DGField(Field):
         n_el_facets = dim + 1 if gel.is_simplex else 2 ** dim
         return dim, n_cell, n_el_facets
 
-
     def get_both_facet_qp_vals(self, state, region):
         """
         Computes values of the variable represented by dofs in
@@ -485,7 +484,6 @@ class DGField(Field):
         facet_bf, whs = self.get_facet_base()
         dofs = self.unravel_sol(state.data[0])
 
-        # facet_bf = facet_bf[:, 0, :, 0, :].T
         inner_facet_vals = nm.zeros((self.n_cell, self.n_el_facets, nm.shape(whs)[1]))
         inner_facet_vals[:] = nm.sum(dofs[..., None] * facet_bf[:, 0, :, 0, :].T, axis=1)
 
@@ -494,29 +492,14 @@ class DGField(Field):
         facet_vols = self.get_facet_vols(region, per_facet_neighbours)
         whs = facet_vols * whs[None, :, :, 0]
 
-        boundary_cells = nm.array(nm.where(per_facet_neighbours < 0)).T
-
-        if state.eq_map.n_epbc > 0:
-            # TODO treat periodic EBCs comprehensively
-            per_facet_neighbours[0, 0] = [-1, 1]
-            per_facet_neighbours[-1, 1] = [0, 0]
-
         for facet_n in range(self.n_el_facets):
             outer_facet_vals[:, facet_n, :] = nm.sum(
                 dofs[per_facet_neighbours[:, facet_n, 0]][None, :, :, 0] *
                 facet_bf[:, 0, per_facet_neighbours[:, facet_n, 1], 0, :], axis=-1).T
 
-        if state.eq_map.n_ebc > 0:
-            for ebc_ii, ebc_cell in enumerate(state.eq_map.eq_ebc):
-                curr_b_cells = boundary_cells[boundary_cells[:, 0] == ebc_cell]
-                for bn_facet in curr_b_cells[:, 1]:
-                    # so far setting only zero order dof
-                    # TODO change chape and data in state.eq_map.eq_ebc and state.eq_map.val_ebc
-                    # to be able to save projections there
-
-                    # so far we set to all boundary faces of the cell
-                    # TODO treat boundary cells where more BCs meet
-                    outer_facet_vals[ebc_cell, bn_facet , :] = state.eq_map.val_ebc[ebc_ii]
+        # set outer ghost dofs to zeros, BC are treated in classical FEM style
+        boundary_cells = per_facet_neighbours < 0
+        outer_facet_vals[boundary_cells[:,:,0]] = 0.0
 
         return inner_facet_vals, outer_facet_vals, whs
 
@@ -774,13 +757,14 @@ class DGField(Field):
         nods = nm.unique(nm.hstack(aux))
 
         if nm.isscalar(fun):
-            # TODO set only zero order
-            vals = nm.repeat([fun], nods.shape[0] * dpn)
+            vals = nm.zeros(aux.shape)
+            vals[:, 0] = fun
+            vals = nm.hstack(vals)
 
         elif isinstance(fun, nm.ndarray):
             assert_(len(fun) == dpn)
-            # TODO set only zero order
-            vals = nm.repeat(fun, nods.shape[0])
+            vals = nm.zeros(aux.shape)
+            vals[:, 0] = nm.repeat(fun, vals.shape[0])
 
         elif callable(fun):
 
@@ -830,16 +814,13 @@ class DGField(Field):
 
         if nm.isscalar(fun):
             vals = nm.zeros(aux.shape)
-            # set zero DOF to value fun, set other DOFs to zero
             vals[:, 0] = fun
-            # vals[:, 1] = -.5
             vals = nm.hstack(vals)
 
         elif isinstance(fun, nm.ndarray):
             assert_(len(fun) == dpn)
             vals = nm.zeros(aux.shape)
             vals[:, 0] = nm.repeat(fun, vals.shape[0])
-
 
         elif callable(fun):
             vals = nm.zeros(aux.shape)
