@@ -1,4 +1,4 @@
-from sfepy.discrete.dg.examples.example_dg_common import *
+from examples.dg.example_dg_common import *
 
 example_name = "adv_1D"
 dim = int(example_name[example_name.index("D") - 1])
@@ -25,7 +25,6 @@ def get_1Dmesh_hook(XS, XE, n_nod):
             pass
 
     return mesh_hook
-
 filename_mesh = UserMeshIO(get_1Dmesh_hook(0, 1, 100))
 
 approx_order = 1
@@ -39,8 +38,8 @@ materials = {
 
 regions = {
     'Omega' : 'all',
-    'Gamma_Left' : ('vertices in (x < 0.000001)', 'vertex'),
-    'Gamma_Right' : ('vertices in (x > 0.999999)', 'vertex'),
+    'Gamma_Left' : ('vertices in (x < 0.00001)', 'vertex'),
+    'Gamma_Right' : ('vertices in (x > 0.99999)', 'vertex'),
 }
 
 fields = {
@@ -57,7 +56,7 @@ def left_sin(ts, coor, bc, problem, **kwargs):
 def get_ic(x, ic=None):
     return ghump(x - .3)
 
-from sfepy.discrete.fem.periodic import match_y_line, match_coors
+from sfepy.discrete.fem.periodic import match_y_line
 functions = {
     'get_ic' : (get_ic,),
     'bc_fun':  (left_sin,),
@@ -70,12 +69,12 @@ functions = {
 #     # 'u_righ' : ('Gamma_Right', {'u.all' : -0.3}),
 # }
 
-epbc_1 = {
-    'name' : 'u_rl',
-    'region' : ['Gamma_Right', 'Gamma_Left'],
-    'dofs' : {'u.all' : 'u.all'},
-    'match' : 'match_y_line',
-}
+# epbc_1 = {
+#     'name' : 'u_rl',
+#     'region' : ['Gamma_Right', 'Gamma_Left'],
+#     'dofs' : {'u.all' : 'u.all'},
+#     'match' : 'match_y_line',
+# }
 
 ics = {
     'ic' : ('Omega', {'u.0' : 'get_ic'}),
@@ -94,10 +93,10 @@ equations = {
 }
 
 solvers = {
-    "tss" : ('ts.tvd_runge_kutta_3',
+    "tss" : ('ts.euler',
                          {"t0": t0,
                           "t1": t1,
-                          'limiter' : IdentityLimiter,
+                          'limiter' : Moment1DLimiter,
                           'verbose' : True}),
     'nls' : ('nls.newton',{} ),
     'ls'  : ('ls.scipy_direct', {})
