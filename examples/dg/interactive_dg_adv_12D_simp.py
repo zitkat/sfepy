@@ -31,7 +31,7 @@ from sfepy.discrete.dg.dg_limiters import IdentityLimiter, Moment1DLimiter
 from sfepy.discrete.dg.my_utils.inits_consts \
     import left_par_q, gsmooth, const_u, ghump, superic
 
-from sfepy.discrete.dg.my_utils.read_plot_1Ddata import clear_folder
+from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
 
 
 #vvvvvvvvvvvvvvvv#
@@ -39,7 +39,7 @@ approx_order = 1
 #^^^^^^^^^^^^^^^^#
 # Setup  names
 domain_name = "domain_2D"
-problem_name = "adv_12D_simplex"
+problem_name = "iadv_12D_simplex"
 output_folder = pjoin("output", problem_name, str(approx_order))
 output_format = "msh"
 mesh_output_folder = "output/mesh"

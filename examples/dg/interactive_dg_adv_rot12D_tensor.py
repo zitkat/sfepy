@@ -30,7 +30,7 @@ from sfepy.discrete.dg.dg_limiters import IdentityLimiter, Moment1DLimiter
 from sfepy.discrete.dg.my_utils.inits_consts \
     import left_par_q, gsmooth, const_u, ghump, superic
 
-from sfepy.discrete.dg.my_utils.read_plot_1Ddata import clear_folder
+from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
 
 
 #vvvvvvvvvvvvvvvv#
@@ -38,7 +38,7 @@ approx_order = 1
 #^^^^^^^^^^^^^^^^#
 # Setup  names
 domain_name = "domain_12D"
-problem_name = "adv_rot12D_tens"
+problem_name = "iadv_rot12D_tens"
 output_folder = pjoin("output", problem_name, str(approx_order))
 output_format = "msh"
 mesh_output_folder = "output/mesh"
@@ -48,7 +48,7 @@ clear_folder(pjoin(output_folder, output_format))
 #------------
 #| Get mesh |
 #------------
-mesh = gen_block_mesh((1., 1.), (20, 2), (.5, 0.5))
+mesh = gen_block_mesh((1., 1.), (100, 2), (.5, 0.5))
 
 # TODO move to some utils
 pi = nm.pi
@@ -58,12 +58,8 @@ rotm = nm.array([[nm.cos(angle),  -nm.sin(angle)],
                  [nm.sin(angle),  nm.cos(angle)]])
 rotcoors = nm.sum(rotm[None, :, :] * coors[..., None], axis=-2)
 
-mesh = gen_block_mesh((1., 1.), (100, 2), (.5, 0.5), coors=rotcoors)
+mesh.coors[:] = rotcoors
 
-outfile = "output/mesh/tens_rot12D_mesh.vtk"
-ensure_path(outfile)
-meshio = VTKMeshIO(outfile)
-meshio.write(outfile, mesh)
 
 velo = -nm.sum(rotm.T * nm.array([1., 0.]), axis=-1)[:, None]
 max_velo = nm.max(nm.linalg.norm(velo))

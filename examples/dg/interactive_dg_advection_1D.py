@@ -28,7 +28,7 @@ from sfepy.discrete.dg.dg_limiters import IdentityLimiter, Moment1DLimiter
 from sfepy.discrete.dg.my_utils.inits_consts import \
     left_par_q, gsmooth, const_u, ghump, superic
 from sfepy.discrete.dg.my_utils.visualizer import load_1D_vtks, plot1D_DG_sol
-from sfepy.discrete.dg.my_utils.read_plot_1Ddata import clear_folder
+from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
 
 
 #vvvvvvvvvvvvvvvv#
@@ -36,7 +36,7 @@ approx_order = 1
 #^^^^^^^^^^^^^^^^#
 # Setup  names
 domain_name = "domain_1D"
-problem_name = "adv_1D"
+problem_name = "iadv_1D"
 output_folder = pjoin("output", problem_name, str(approx_order))
 output_format = "vtk"
 mesh_output_folder = "output/mesh"
@@ -201,6 +201,6 @@ state_end = pb.solve()
 # plt.plot(xx, ww_s[:, 0])
 # plt.plot(xx, ww_e[:, 0])
 # plt.show()
-from sfepy.discrete.dg.my_utils.read_plot_1Ddata import load_and_plot_fun
+from sfepy.discrete.dg.my_utils.plot_1D_dg import load_and_plot_fun
 
 load_and_plot_fun(output_folder, domain_name, t0, t1, min(tn, save_timestn), approx_order, ic_fun)
