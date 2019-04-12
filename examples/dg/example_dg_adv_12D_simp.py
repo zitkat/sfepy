@@ -1,4 +1,5 @@
-from sfepy.discrete.dg.examples.example_dg_common import *
+from examples.dg.example_dg_common import *
+
 
 example_name = "adv_12D_simp"
 dim = int(example_name[example_name.index("D") - 1])
@@ -23,6 +24,7 @@ materials = {
 
 regions = {
     'Omega' : 'all',
+    'Gamma_Left': ('vertices in (x < 0.055)', 'cell'),
 }
 
 fields = {
@@ -43,6 +45,11 @@ functions = {
 
 ics = {
     'ic' : ('Omega', {'u.0' : 'get_ic'}),
+}
+
+ebcs = {
+    'u_left' : ('Gamma_Left', {'u.all' : .5}),
+    # 'u_righ' : ('Gamma_Right', {'u.all' : -0.3}),
 }
 
 integrals = {
@@ -72,6 +79,7 @@ options = {
     'nls' : 'newton',
     'ls' : 'ls',
     'save_times' : 100,
+    'active_only' : False,
     'output_format' : 'msh',
     'pre_process_hook' : get_cfl_setup(CFL)
 }

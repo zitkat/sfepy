@@ -1,4 +1,4 @@
-from sfepy.discrete.dg.examples.example_dg_common import *
+from examples.dg.example_dg_common import *
 
 example_name = "adv_1D"
 dim = int(example_name[example_name.index("D") - 1])
@@ -25,7 +25,6 @@ def get_1Dmesh_hook(XS, XE, n_nod):
             pass
 
     return mesh_hook
-
 filename_mesh = UserMeshIO(get_1Dmesh_hook(0, 1, 100))
 
 approx_order = 1
@@ -51,18 +50,31 @@ variables = {
     'u' : ('unknown field', 'density', 0, 1),
     'v' : ('test field',    'density', 'u'),
 }
-
-ebcs = {
-    'u_left' : ('Gamma_Left', {'u.all' : 0.0}),
-    # 'u_righ' : ('Gamma_Right', {'u.all' : -0.3}),
-}
+def left_sin(ts, coor, bc, problem, **kwargs):
+    return nm.sin(2*nm.pi*ts.time)
 
 def get_ic(x, ic=None):
     return ghump(x - .3)
 
+from sfepy.discrete.fem.periodic import match_y_line
 functions = {
-    'get_ic' : (get_ic,)
+    'get_ic' : (get_ic,),
+    'bc_fun':  (left_sin,),
+    'match_y_line': (match_y_line,)
 }
+
+
+# ebcs = {
+#     'u_left' : ('Gamma_Left', {'u.all' : .5}),
+#     # 'u_righ' : ('Gamma_Right', {'u.all' : -0.3}),
+# }
+
+# epbc_1 = {
+#     'name' : 'u_rl',
+#     'region' : ['Gamma_Right', 'Gamma_Left'],
+#     'dofs' : {'u.all' : 'u.all'},
+#     'match' : 'match_y_line',
+# }
 
 ics = {
     'ic' : ('Omega', {'u.0' : 'get_ic'}),
@@ -95,5 +107,6 @@ options = {
     'nls' : 'newton',
     'ls' : 'ls',
     'save_times' : 100,
+    'active_only' : True,
     'pre_process_hook' : get_cfl_setup(CFL)
 }

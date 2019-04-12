@@ -1,82 +1,97 @@
 import numpy as nm
 from numpy.linalg import norm
 import matplotlib.pyplot as plt
-
+from os.path import join as pjoin
 
 # sfepy imports
-from sfepy.discrete.fem import Mesh
+from sfepy.discrete.fem import Mesh, FEDomain
 from sfepy.discrete.fem.meshio import UserMeshIO
 from sfepy.base.base import Struct
 from sfepy.base.base import IndexedStruct
 from sfepy.discrete import (FieldVariable, Material, Integral, Function,
                             Equation, Equations, Problem)
-from sfepy.discrete.fem import Mesh, FEDomain, Field
 from sfepy.discrete.conditions import InitialCondition, EssentialBC, Conditions
-from sfepy.terms.terms import Term
 from sfepy.solvers.ls import ScipyDirect
 from sfepy.solvers.nls import Newton
 from sfepy.solvers.ts_solvers import SimpleTimeSteppingSolver
 from sfepy.mesh.mesh_generators import gen_block_mesh
-from sfepy.mesh.mesh_tools import triangulate
 from sfepy.discrete.fem.meshio import VTKMeshIO
 from sfepy.base.ioutils import ensure_path
+
 from sfepy.terms.terms_dot import ScalarDotMGradScalarTerm, DotProductVolumeTerm
 
 # local imports
 from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm
-from sfepy.discrete.dg.dg_tssolver import \
-    EulerStepSolver, TVDRK3StepSolver
+from sfepy.discrete.dg.dg_tssolver \
+    import EulerStepSolver, TVDRK3StepSolver
 from sfepy.discrete.dg.dg_field import DGField
 from sfepy.discrete.dg.dg_limiters import IdentityLimiter, Moment1DLimiter
 
+from sfepy.discrete.dg.my_utils.inits_consts \
+    import left_par_q, gsmooth, const_u, ghump, superic
 
-from sfepy.discrete.dg.my_utils.inits_consts import \
-    left_par_q, gsmooth, const_u, ghump, superic
+from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
 
 
-# Setup output names
-domain_name = "domain_simplex_2D"
-output_folder = "output/adv_simp_2D/"
-output_folder_mesh = "output/mesh"
+#vvvvvvvvvvvvvvvv#
+approx_order = 1
+#^^^^^^^^^^^^^^^^#
+# Setup  names
+domain_name = "domain_12D"
+problem_name = "iadv_12D_tens"
+output_folder = pjoin("output", problem_name, str(approx_order))
+output_format = "msh"
+mesh_output_folder = "output/mesh"
 save_timestn = 100
+clear_folder(pjoin(output_folder, output_format))
 
 #------------
 #| Get mesh |
 #------------
-# mesh = gen_block_mesh((1., 1.), (20, 20), (0.5, 0.5))
-# mesh = triangulate(mesh)
-mesh_name = "square_tri2"
-mesh = Mesh.from_file("meshes/" + mesh_name + ".mesh")
-outfile = "output/mesh/" + mesh_name + ".vtk"
-ensure_path(outfile)
-meshio = VTKMeshIO(outfile)
-meshio.write(outfile, mesh)
+mesh = gen_block_mesh((1., 1.), (20, 2), (.5, 0.5))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #-----------------------------
 #| Create problem components |
 #-----------------------------
-#vvvvvvvvvvvvvvvv#
-approx_order = 0
-#^^^^^^^^^^^^^^^^#
-integral = Integral('i', order=5)
+
+integral = Integral('i', order=approx_order * 2)
 domain = FEDomain(domain_name, mesh)
 omega = domain.create_region('Omega', 'all')
-dgfield = DGField('dgfu', nm.float64, 'scalar', omega,
+field = DGField('dgfu', nm.float64, 'scalar', omega,
                   approx_order=approx_order)
 
-u = FieldVariable('u', 'unknown', dgfield, history=1)
-v = FieldVariable('v', 'test', dgfield, primary_var_name='u')
+u = FieldVariable('u', 'unknown', field, history=1)
+v = FieldVariable('v', 'test', field, primary_var_name='u')
+
 
 MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u", integral, omega, u=u, v=v)
 
 velo = nm.array([[1., 0.]]).T
 a = Material('a', val=[velo])
 StiffT = ScalarDotMGradScalarTerm("adv_stiff(a.val, u, v)", "a.val, u[-1], v", integral, omega,
-                                    u=u, v=v, a=a, mode="grad_virtual")
+                                    u=u, v=v, a=a)
 
 alpha = Material('alpha', val=[.0])
-FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "alpha.val, u[-1], v, a.val", integral, omega, u=u, v=v, a=a, alpha=alpha)
+FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
+                         integral, omega, u=u, v=v, a=a, alpha=alpha)
 
 eq = Equation('balance', MassT + StiffT - FluxT)
 eqs = Equations([eq])
@@ -87,10 +102,11 @@ eqs = Equations([eq])
 #------------------------------
 # TODO BCs
 
-
+#----------------------------
+#| Create initial condition |
+#----------------------------
 def ic_wrap(x, ic=None):
-    x = (x + 1.3) / 4
-    return  gsmooth(x[..., 0:1]) * gsmooth(x[..., 1:])
+    return gsmooth(x[..., 0:1])
 #-----------
 #| Plot IC |
 #-----------
@@ -118,40 +134,44 @@ ics = InitialCondition('ic', omega, {'u.0': ic_fun})
 #------------------
 #| Create problem |
 #------------------
-pb = Problem('advection', equations=eqs, conf=Struct(options={"save_times": save_timestn}, ics={},
-                                                     ebcs={}, epbcs={}, lcbcs={}, materials={}))
-pb.setup_output(output_dir=output_folder, output_format="msh")
-# pb.set_bcs(ebcs=Conditions([left_fix_u, right_fix_u]))
+pb = Problem(problem_name, equations=eqs, conf=Struct(options={"save_times": save_timestn}, ics={},
+                                                     ebcs={}, epbcs={}, lcbcs={}, materials={}),
+             active_only=False)
+pb.setup_output(output_dir=output_folder, output_format=output_format)
 pb.set_ics(Conditions([ics]))
 
-state0 = pb.get_initial_state()
-pb.save_state("output/state0_simp_2D.msh", state=state0)
 
+#------------------
+#| Create limiter |
+#------------------
+limiter = IdentityLimiter
 
 #---------------------------
 #| Set time discretization |
 #---------------------------
 CFL = .4
-max_velo = nm.max(nm.abs(velo))
+max_velo = nm.max(nm.linalg.norm(velo))
 t0 = 0
 t1 = .2
 dx = nm.min(mesh.cmesh.get_volumes(2))
-dt = dx / norm(velo) * CFL/(2*approx_order + 1)
-# time_steps_N = int((tf - t0) / dt) * 2
+dt = dx / max_velo * CFL/(2*approx_order + 1)
 tn = int(nm.ceil((t1 - t0) / dt))
 dtdx = dt / dx
+
 #------------------
 #| Create solver |
 #------------------
 ls = ScipyDirect({})
 nls_status = IndexedStruct()
-nls = Newton({}, lin_solver=ls, status=nls_status)
+nls = Newton({'is_linear': True}, lin_solver=ls, status=nls_status)
 
-tss = EulerStepSolver({'t0': t0, 't1': t1, 'n_step': tn},
-                        nls=nls, context=pb, verbose=True)
+tss_conf = {'t0': t0,
+            't1': t1,
+            'n_step': tn,
+            "limiter": limiter}
 
-# tss = TVDRK3StepSolver({'t0': t0, 't1': t1, 'n_step': tn},
-#                          nls=nls, context=pb, verbose=True)
+tss = EulerStepSolver(tss_conf,
+                         nls=nls, context=pb, verbose=True)
 
 
 #---------
@@ -174,4 +194,3 @@ print("======================================")
 
 pb.set_solver(tss)
 state_end = pb.solve()
-# pb.save_state("output/adv_1D/domain_1D_end.vtk", state=state_end)
