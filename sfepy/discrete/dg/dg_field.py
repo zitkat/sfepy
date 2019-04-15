@@ -741,8 +741,8 @@ class DGField(Field):
             vals = nm.repeat([fun], nods.shape[0] * dpn)
 
         elif isinstance(fun, nm.ndarray):
-            assert_(len(fun) == dpn)
-            vals = nm.repeat(fun, nods.shape[0])
+            if nm.shape(fun) == nm.shape(nods):
+                vals = fun
 
         elif callable(fun):
 
