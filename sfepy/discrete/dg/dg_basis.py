@@ -5,8 +5,32 @@ from numpy import newaxis as nax
 from sfepy.base.ioutils import InDir
 from sfepy.discrete.fem.poly_spaces import PolySpace
 from sfepy.base.base import Struct
+from functools import reduce
+from operator import add, mul
 
 
+skipped_dofs = [1]
+
+
+def skip_iter(i):
+
+    if isinstance(i, int):
+        i = [i]
+
+    def decorate(gen):
+
+        def skip_gen(*args, **kwargs):
+            for n, m in enumerate(gen(*args, **kwargs)):
+                if n in i:
+                    continue
+                yield m
+
+        return skip_gen
+
+    return decorate
+
+
+@skip_iter(skipped_dofs)
 def iter_by_order(order, dim):
     """
     Iterates over all combinations of basis functions indexes
@@ -38,6 +62,15 @@ def iter_by_order(order, dim):
         return
 
 
+def sub_nods(n):
+    def decorate(func):
+        def sub_func(*args, **kwargs):
+            return func(*args, **kwargs) - n
+        return sub_func
+    return decorate
+
+
+@sub_nods(len(skipped_dofs))
 def get_n_el_nod(order, dim):
     """
     Number of nodes per element for discontinuous legendre basis, i.e.
@@ -61,8 +94,6 @@ class LegendrePolySpace(PolySpace):
     """
 
     def __init__(self, name, geometry, order):
-        from toolz import map, reduce
-        from operator import add, mul
         """
         Does not use init_context
         :param name:
@@ -548,7 +579,7 @@ def plot_2Dsimplex_basis_grad():
                       dim=2,
                       coors=gel_coors)
 
-    order = 1
+    order = 2
     bs = LegendreSimplexPolySpace('legb', geometry, order)
 
     def simplex_nodes2D(N):
