@@ -9,7 +9,7 @@ from functools import reduce
 from operator import add, mul
 
 
-skipped_dofs = [1]
+skipped_dofs = [2]
 
 
 def skip_iter(i):
@@ -173,6 +173,23 @@ class LegendrePolySpace(PolySpace):
                                           F=self.coefM, P=self.expoM, desc=self.geometry.name)
         return interp_scheme_struct
 
+    def load_interpol_scheme_from_file(self, name):
+        """
+        Load interpolation scheme for gmsh from files, allows skipping dofs!
+        :return:
+        """
+        indir = InDir(__file__)
+        try:
+            idxtoload = nm.array([i for i in skip_iter(skipped_dofs)(range)(self.n_nod + len(skipped_dofs))])
+            self.coefM = nm.loadtxt(
+                indir(name + "_coefs.txt")
+            )[nm.ix_(idxtoload, range(self.n_nod + len(skipped_dofs)))]
+            self.expoM = nm.loadtxt(
+                indir(name + "_expos.txt")
+            )[:self.n_nod + len(skipped_dofs), :]
+        except IOError as e:
+            raise IOError("File {} not found, run gen_legendre_simplex_base.py to generate it.".format(e.args[0]))
+
     def combine_polyvals(self, coors, polyvals, idx):
         raise NotImplementedError(
             "Called abstract method, use some subclass: LegendreTensorPolySpace or LegendreSimplexPolySpace")
@@ -308,16 +325,7 @@ class LegendreTensorProductPolySpace(LegendrePolySpace):
     def __init__(self, name, geometry, order):
         LegendrePolySpace.__init__(self, name, geometry, order)
         if self.dim > 1:
-            indir = InDir(__file__)
-            try:
-                self.coefM = nm.loadtxt(
-                    indir("legendre2D_tensor_coefs.txt")
-                )[:self.n_nod, :self.n_nod]
-                self.expoM = nm.loadtxt(
-                    indir("legendre2D_tensor_expos.txt")
-                )[:self.n_nod, :]
-            except IOError as e:
-                raise IOError("File {} not found, run gen_legendre_tensor_base.py to generate it.".format(e.args[0]))
+            self.load_interpol_scheme_from_file("legendre2D_tensor")
 
     def combine_polyvals(self, coors, polyvals, idx):
         return nm.prod(polyvals[..., range(len(idx)), idx], axis=-1)
@@ -389,16 +397,7 @@ class LegendreSimplexPolySpace(LegendrePolySpace):
     def __init__(self, name, geometry, order):
         LegendrePolySpace.__init__(self, name, geometry, order)
         if self.dim > 1:
-            indir = InDir(__file__)
-            try:
-                self.coefM = nm.loadtxt(
-                    indir("legendre2D_simplex_coefs.txt")
-                )[:self.n_nod, :self.n_nod]
-                self.expoM = nm.loadtxt(
-                    indir("legendre2D_simplex_expos.txt")
-                )[:self.n_nod, :]
-            except IOError as e:
-                raise IOError("File {} not found, run gen_legendre_simplex_base.py to generate it.".format(e.args[0]))
+            self.load_interpol_scheme_from_file("legendre2D_simplex")
 
     def combine_polyvals(self, coors, polyvals, idx):
 
