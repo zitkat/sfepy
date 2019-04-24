@@ -2,18 +2,19 @@ from examples.dg.example_dg_common import *
 from toolz import reduce
 from operator import mul
 
-example_name = "adv_2D_mquad"
+from dg_basis import get_n_el_nod
+
+example_name = "adv_2D_rtri"
 dim = 2 #int(example_name[example_name.index("D") - 1])
 
-filename_mesh = "mesh/messedquad2_diamond.vtk"
+filename_mesh = "mesh/regulartri_diamond.vtk"
 
 approx_order = 1
 t0 = 0.
 t1 = 1
 CFL = .4
 
-n_el_nod =  int(reduce(mul, map(lambda i: approx_order + i + 1, range(dim))) /
-                         reduce(mul, range(1, dim + 1)))  # number of DOFs per element
+n_el_nod = get_n_el_nod(approx_order, dim)   # number of DOFs per element
 
 # get_common(approx_order, CFL, t0, t1, None, get_ic)
 angle = - nm.pi/5
