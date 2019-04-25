@@ -354,15 +354,18 @@ class DGField(Field):
             weights = weights[None, :, None]
             facet_qps = self._transform_qps_to_facets(qps, self.gel.name)
 
-        # from postprocess.plot_facets import plot_geometry
-        # from postprocess.plot_quadrature import plot_weighted_points
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots()
-        # plot_geometry(ax, self.gel)
-        # facet_qps_flat = nm.concatenate([facet_qps[..., i,:] for i in range(self.n_el_facets)])
-        # facet_weights_flat = nm.concatenate([weights] * self.n_el_facets)[:, 0]
-        # ax.scatter(facet_qps_flat[..., 0, 0], facet_qps_flat[..., 0, 1])
-        # plt.show()
+        from postprocess.plot_facets import plot_geometry
+        from postprocess.plot_quadrature import plot_weighted_points
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        plot_geometry(ax, self.gel)
+        c = ["r", "g", "b", "c"]
+        for ii in range(self.n_el_facets):
+            facet_qps_flat = nm.concatenate([facet_qps[..., i,:] for i in range(self.n_el_facets)])
+            facet_weights_flat = nm.concatenate([weights] * self.n_el_facets)[:, 0]
+            ax.scatter(facet_qps[:,0, ii, 0 ], facet_qps[:,0, ii, 1], label="Facet {}".format(ii), color=c[ii])
+        plt.legend()
+        plt.show()
 
         return facet_qps, weights
 
