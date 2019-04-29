@@ -305,6 +305,8 @@ class DGField(Field):
             extended_coors = nm.zeros(nm.shape(coors)[:-1] + (2,))
             extended_coors[:,0] = coors[:, 0]
             coors = extended_coors
+        # shift centroid coors to lie within cells but be different for each dof
+        # TODO for simplex meshes these coors fail to match
         coors += eps * nm.repeat(nm.arange(self.n_el_nod), len(nm.unique(cells)))[:, None]
         return coors
 
@@ -316,10 +318,10 @@ class DGField(Field):
     def _transform_qps_to_facets(self, qps, geo_name):
         """
         Transforms points given in qps to all facets of the reference element
-        of geometry geo_name. Return is of shape shape(qps) + (n_el_facets, geo dim)
+        with geometry geo_name.
         :param qps:
         :param geo_name:
-        :return: tqps
+        :return: tqps is of shape shape(qps) + (n_el_facets, geo dim)
         """
         if geo_name == "1_2":
             tqps = nm.zeros(nm.shape(qps) + (2, 1,))
@@ -432,49 +434,72 @@ class DGField(Field):
         else:
             self.facet_neighbour_index.pop(region.name)
 
-    def get_facet_neighbor_idx(self, region):
+    def get_facet_neighbor_idx(self, region, eq_map):
         """
         Returns index of cell neighbours sharing facet, along with local index
-        of the facet within neighbour, puts -1 where there are no neighbours
-        Cashes neighbour index in self.facet_neighbours
+        of the facet within neighbour also treats periodic boundary conditions i.e.,
+        plugs correct neighbours for cell on periodic boundary. Where there are no neighbours
+        specified puts -1.
+
+        Cashes neighbour index in self.facet_neighbours!
+
         :param region:
+        :param eq_map: eq_map from state variable containing information on EPBC
         :return: shape is (n_cell, n_el_facet, 2), first value in last axis is index of the neighbouring cell
         the second is index of the facet this nb. cell in said nb. cell
         """
         if region.name in self.facet_neighbour_index:
-            facet_neighbours = self.facet_neighbour_index[region.name]
-        else:
-            dim, n_cell, n_el_facets = self.get_region_info(region)
+            return self.facet_neighbour_index[region.name]
 
-            cmesh = region.domain.mesh.cmesh
-            cells = region.cells
+        dim, n_cell, n_el_facets = self.get_region_info(region)
 
-            facet_neighbours = nm.zeros((n_cell, n_el_facets, 2), dtype=nm.int32)
+        cmesh = region.domain.mesh.cmesh
+        cells = region.cells
 
-            c2fi, c2fo = cmesh.get_incident(dim - 1, cells, dim, ret_offsets=True)
+        facet_neighbours = nm.zeros((n_cell, n_el_facets, 2), dtype=nm.int32)
 
-            for ic, o1 in enumerate(c2fo[:-1]):  # loop over cells
-                o2 = c2fo[ic + 1]
+        c2fi, c2fo = cmesh.get_incident(dim - 1, cells, dim, ret_offsets=True)
 
-                c2ci, c2co = cmesh.get_incident(dim, c2fi[o1:o2], dim - 1,
-                                                ret_offsets=True)  # get neighbours per facet of the cell
-                ii = cmesh.get_local_ids(c2fi[o1:o2], dim - 1, c2ci, c2co, dim)
-                fis = nm.c_[c2ci, ii]
+        for ic, o1 in enumerate(c2fo[:-1]):  # loop over cells
+            o2 = c2fo[ic + 1]
 
-                nbrs = []
-                for ifa, of1 in enumerate(c2co[:-1]):  # loop over facets
-                    of2 = c2co[ifa + 1]
-                    if of2 == (of1 + 1):  # facet has only one cell
-                        # Surface facet.
-                        nbrs.append([-1, -1])  # c2ci[of1])  # append no neighbours
+            c2ci, c2co = cmesh.get_incident(dim, c2fi[o1:o2], dim - 1,
+                                            ret_offsets=True)  # get neighbours per facet of the cell
+            ii = cmesh.get_local_ids(c2fi[o1:o2], dim - 1, c2ci, c2co, dim)
+            fis = nm.c_[c2ci, ii]
+
+            nbrs = []
+            for ifa, of1 in enumerate(c2co[:-1]):  # loop over facets
+                of2 = c2co[ifa + 1]
+                if of2 == (of1 + 1):  # facet has only one cell
+                    # Surface facet.
+                    nbrs.append([-1, -1])  # c2ci[of1])  # append no neighbours
+                else:
+                    if c2ci[of1] == cells[ic]:  # do not append the cell itself
+                        nbrs.append(fis[of2 - 1])
                     else:
-                        if c2ci[of1] == cells[ic]:  # do not append the cell itself
-                            nbrs.append(fis[of2 - 1])
-                        else:
-                            nbrs.append(fis[of1])
-                facet_neighbours[ic, :, :] = nbrs
+                        nbrs.append(fis[of1])
+            facet_neighbours[ic, :, :] = nbrs
 
-            self.facet_neighbour_index[region.name] = facet_neighbours
+        # treat EPBCs
+        if eq_map.n_epbc > 0:
+            # first repair neighbours of the EPBC cells, to be the same
+            mcells = nm.unique(self.dofs2cells[eq_map.master])
+            scells = nm.unique(self.dofs2cells[eq_map.slave])
+            periodic_nbrhds = nm.select(
+                               [facet_neighbours[scells] < 0, facet_neighbours[mcells] < 0],
+                               [facet_neighbours[mcells], facet_neighbours[scells]])
+            facet_neighbours[mcells] = periodic_nbrhds
+            facet_neighbours[scells] = periodic_nbrhds
+
+            # now repair neighbours of the neighbours of EPBC cells to
+            # point to slave cell
+            # for scell, nb  in zip(scells, periodic_nbrhds[0, :]):
+            #     pnb, fnb = nb
+            #     per_facet_neighbours[pnb, fnb, 0] = scell
+
+        # cache results
+        self.facet_neighbour_index[region.name] = facet_neighbours
 
         return facet_neighbours
 
@@ -508,21 +533,7 @@ class DGField(Field):
         inner_facet_vals[:] = nm.sum(dofs[..., None] * facet_bf[:, 0, :, 0, :].T, axis=1)
 
         outer_facet_vals = nm.zeros((self.n_cell, self.n_el_facets, nm.shape(whs)[1]))
-        per_facet_neighbours = self.get_facet_neighbor_idx(region)
-
-        if state.eq_map.n_epbc > 0:
-            # first repair neighbours of the EPBC cells, to be the same
-            mcells = nm.unique(self.dofs2cells[state.eq_map.master])
-            scells = nm.unique(self.dofs2cells[state.eq_map.slave])
-            periodic_nbrhds = nm.select([per_facet_neighbours[scells] < 0, per_facet_neighbours[mcells] < 0],
-                               [per_facet_neighbours[mcells], per_facet_neighbours[scells]])
-            per_facet_neighbours[mcells] = periodic_nbrhds
-            per_facet_neighbours[scells] = periodic_nbrhds
-
-            # now repair neighbours of the neighbours of EPBC cells to
-            # point to slave cell
-            for pnb, fnb in periodic_nbrhds[0, :]:
-                per_facet_neighbours[pnb, fnb, 0] = mcells
+        per_facet_neighbours = self.get_facet_neighbor_idx(region, state.eq_map)
 
         facet_vols = self.get_facet_vols(region, per_facet_neighbours)
         whs = facet_vols * whs[None, :, :, 0]
