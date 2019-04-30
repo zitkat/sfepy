@@ -3,8 +3,6 @@ from numpy import dot
 import matplotlib.pyplot as plt
 import numpy.linalg as nla
 
-
-
 # sfepy imports
 from sfepy.base.base import (get_default, output, assert_,
                              Struct, IndexedStruct)

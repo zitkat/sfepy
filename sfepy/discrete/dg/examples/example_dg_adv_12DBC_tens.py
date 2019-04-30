@@ -1,5 +1,4 @@
-from examples.dg.example_dg_common import *
-
+from sfepy.discrete.dg.examples.example_dg_common import *
 
 example_name = "adv_12DBC_tens"
 dim = int(example_name[example_name.index("D") - 1])
@@ -8,8 +7,8 @@ filename_mesh = "mesh/tens_12D_mesh.vtk"
 
 approx_order = 1
 t0 = 0.
-t1 = 1
-CFL = .5
+t1 = .2
+CFL = .1
 
 
 # get_common(approx_order, CFL, t0, t1, None, get_ic)
@@ -24,9 +23,7 @@ materials = {
 
 regions = {
     'Omega' : 'all',
-    'Gamma_Left': ('vertices in (x < 0.005)', 'facet'),
-    'Gamma_Right': ('vertices in (x > 0.955)', 'facet'),
-
+    'Gamma_Left': ('vertices in (x < 0.055)', 'cell'),
 }
 
 fields = {
@@ -39,30 +36,19 @@ variables = {
 }
 
 def get_ic(x, ic=None):
-    return gsmooth(x[..., 0:1])# * gsmooth(x[..., 1:])
-
-from sfepy.discrete.fem.periodic import match_y_line
+    return 0*gsmooth(x[..., 0:1])# * gsmooth(x[..., 1:])
 
 functions = {
-    'get_ic' : (get_ic,),
-    'match_y_line': (match_y_line,)
-
+    'get_ic' : (get_ic,)
 }
 
 ics = {
     'ic' : ('Omega', {'u.0' : 'get_ic'}),
 }
 
-# ebcs = {
-#     'u_left' : ('Gamma_Left', {'u.all' : .5}),
-#     # 'u_righ' : ('Gamma_Right', {'u.all' : -0.3}),
-# }
-
-epbc_1 = {
-    'name' : 'u_rl',
-    'region' : ['Gamma_Right', 'Gamma_Left'],
-    'dofs' : {'u.all' : 'u.all'},
-    'match' : 'match_y_line',
+ebcs = {
+    'u_left' : ('Gamma_Left', {'u.all' : .5}),
+    # 'u_righ' : ('Gamma_Right', {'u.all' : -0.3}),
 }
 
 integrals = {
@@ -92,7 +78,7 @@ options = {
     'nls' : 'newton',
     'ls' : 'ls',
     'save_times' : 100,
-    'active_only' : True,
+    'active_only' : False,
     'output_format' : 'msh',
     'pre_process_hook' : get_cfl_setup(CFL)
 }
