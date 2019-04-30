@@ -505,8 +505,8 @@ class DGField(Field):
         if self.dim > 1:
             outer_facet_vals[ghost_nbrs[:-1]] = self.boundary_val
 
-
-        return inner_facet_vals, outer_facet_vals, whs
+        # FIXME flip outer_facet_vals to match the inner_facet_vals qp ordering
+        return inner_facet_vals, outer_facet_vals[..., ::-1], whs
 
     def get_cell_normals_per_facet(self, region):
         """
