@@ -11,12 +11,10 @@ from sfepy.discrete.common.fields import parse_shape, Field
 from sfepy.discrete import Integral, FieldVariable
 from six.moves import range
 from sfepy.discrete.fem import Mesh, Field
-from sfepy.discrete.fem.fields_base import FEField
 from sfepy.discrete.fem.poly_spaces import PolySpace
 from sfepy.discrete.fem.mappings import VolumeMapping
 from sfepy.base.base import (get_default, output, assert_,
                              Struct, basestr, IndexedStruct)
-from sfepy.discrete.variables import Variable, Variables
 
 # local imports
 from sfepy.discrete.dg.dg_basis import LegendrePolySpace, LegendreSimplexPolySpace, LegendreTensorProductPolySpace
@@ -547,9 +545,11 @@ class DGField(Field):
         boundary_cells = per_facet_neighbours < 0
         outer_facet_vals[boundary_cells[:,:,0]] = 0.0
 
-        return inner_facet_vals, outer_facet_vals, whs
+        # FIXME flip outer_facet_vals to match the inner_facet_vals qp ordering
+        return inner_facet_vals, outer_facet_vals[..., ::-1], whs
 
-    def get_cell_normals_per_facet(self, region):
+
+def get_cell_normals_per_facet(self, region):
         """
 
         :param region:
@@ -808,9 +808,9 @@ class DGField(Field):
             vals = nm.hstack(vals)
 
         elif isinstance(fun, nm.ndarray):
-            assert_(len(fun) == dpn)
-            vals = nm.zeros(aux.shape)
-            vals[:, 0] = nm.repeat(fun, vals.shape[0])
+            # useful for testing, allows to pass complete array of dofs as IC
+            if nm.shape(fun) == nm.shape(nods):
+                vals = fun
 
         elif callable(fun):
 
@@ -818,15 +818,11 @@ class DGField(Field):
             weights = weights[:, None]  # add axis for broadcasting
             coors = self.mapping.get_physical_qps(qp)
 
-            # sic = nm.zeros((2, mesh.n_el, 1), dtype=nm.float64)
-            # sic[0, :] = nm.sum(weights * fun(coors), axis=1)[:,  None] / 2
-            # sic[1, :] = 3 * nm.sum(weights * qp * fun(coors), axis=1)[:,  None] / 2
-
             base_vals_qp = self.poly_space.eval_base(qp)[:, 0, :]
             # this drops redundant axis that is returned by eval_base due to consistency with derivatives
 
             # left hand, so far only orthogonal basis
-            lhs_diag = nm.sum(weights * base_vals_qp ** 2, axis=0)
+            lhs_diag = nm.sum(weights * base_vals_qp**2, axis=0)
             # for legendre base this can be calculated exactly
             # in 1D it is: 1 / (2 * nm.arange(self.n_el_nod) + 1)
 
