@@ -549,7 +549,7 @@ class DGField(Field):
         return inner_facet_vals, outer_facet_vals[..., ::-1], whs
 
 
-def get_cell_normals_per_facet(self, region):
+    def get_cell_normals_per_facet(self, region):
         """
 
         :param region:
