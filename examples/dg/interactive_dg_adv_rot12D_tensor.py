@@ -25,7 +25,7 @@ from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm
 from sfepy.discrete.dg.dg_tssolver \
     import EulerStepSolver, TVDRK3StepSolver
 from sfepy.discrete.dg.dg_field import DGField
-from sfepy.discrete.dg.dg_limiters import IdentityLimiter, Moment1DLimiter
+from sfepy.discrete.dg.dg_limiters import IdentityLimiter, MomentLimiter1D
 
 from sfepy.discrete.dg.my_utils.inits_consts \
     import left_par_q, gsmooth, const_u, ghump, superic
@@ -50,7 +50,6 @@ clear_folder(pjoin(output_folder, output_format))
 #------------
 mesh = gen_block_mesh((1., 1.), (100, 2), (.5, 0.5))
 
-# TODO move to some utils
 pi = nm.pi
 coors = mesh.coors
 angle = - pi/5
@@ -96,7 +95,6 @@ eqs = Equations([eq])
 #------------------------------
 #| Create bounrady conditions |
 #------------------------------
-# TODO BCs
 
 #----------------------------
 #| Create initial condition |

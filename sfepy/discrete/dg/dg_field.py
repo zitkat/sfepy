@@ -518,7 +518,8 @@ class DGField(Field):
                     # TODO treat boundary cells where more BCs meet
                     outer_facet_vals[ebc_cell, bn_facet , :] = state.eq_map.val_ebc[ebc_ii]
 
-        return inner_facet_vals, outer_facet_vals, whs
+        # FIXME flip outer_facet_vals to match the inner_facet_vals qp ordering
+        return inner_facet_vals, outer_facet_vals[..., ::-1], whs
 
     def get_cell_normals_per_facet(self, region):
         """
@@ -777,9 +778,9 @@ class DGField(Field):
             vals = nm.repeat([fun], nods.shape[0] * dpn)
 
         elif isinstance(fun, nm.ndarray):
-            assert_(len(fun) == dpn)
-            # TODO set only zero order
-            vals = nm.repeat(fun, nods.shape[0])
+            # useful for testing, allows to pass complete array of dofs as IC
+            if nm.shape(fun) == nm.shape(nods):
+                vals = fun
 
         elif callable(fun):
 
@@ -787,15 +788,11 @@ class DGField(Field):
             weights = weights[:, None]  # add axis for broadcasting
             coors = self.mapping.get_physical_qps(qp)
 
-            # sic = nm.zeros((2, mesh.n_el, 1), dtype=nm.float64)
-            # sic[0, :] = nm.sum(weights * fun(coors), axis=1)[:,  None] / 2
-            # sic[1, :] = 3 * nm.sum(weights * qp * fun(coors), axis=1)[:,  None] / 2
-
             base_vals_qp = self.poly_space.eval_base(qp)[:, 0, :]
             # this drops redundant axis that is returned by eval_base due to consistency with derivatives
 
             # left hand, so far only orthogonal basis
-            lhs_diag = nm.sum(weights * base_vals_qp ** 2, axis=0)
+            lhs_diag = nm.sum(weights * base_vals_qp**2, axis=0)
             # for legendre base this can be calculated exactly
             # in 1D it is: 1 / (2 * nm.arange(self.n_el_nod) + 1)
 
