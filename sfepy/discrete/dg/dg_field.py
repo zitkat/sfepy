@@ -501,14 +501,6 @@ class DGField(Field):
             facet_neighbours[scells, scells_facets, 0] = mcells  # set neighbours of scells to mcells
             facet_neighbours[scells, scells_facets, 1] = mcells_facets  # set neighbour facets to facets of mcell missing neighbour
 
-
-
-            # now repair neighbours of the neighbours of EPBC cells to
-            # point to slave cell
-            # for scell, nb  in zip(scells, periodic_nbrhds[0, :]):
-            #     pnb, fnb = nb
-            #     per_facet_neighbours[pnb, fnb, 0] = scell
-
         # cache results
         self.facet_neighbour_index[region.name] = facet_neighbours
 
@@ -556,7 +548,11 @@ class DGField(Field):
                 facet_bf[:, 0, per_facet_neighbours[:, facet_n, 1], 0, :], axis=-1).T
 
         if state.eq_map.n_ebc > 0:
-            for ebc_ii, ebc_cell in enumerate(state.eq_map.eq_ebc):
+            # get cells with missing neighbours, ignore that we do not know neighbour local fact idx
+            boundary_cells = nm.array(nm.where(per_facet_neighbours[:,:, 0] < 0)).T
+            ebc_cells = self.dofs2cells[state.eq_map.eq_ebc][::self.n_el_nod]
+
+            for ebc_ii, ebc_cell in enumerate(ebc_cells):
                 curr_b_cells = boundary_cells[boundary_cells[:, 0] == ebc_cell]
                 for bn_facet in curr_b_cells[:, 1]:
                     # so far setting only zero order dof
@@ -565,7 +561,8 @@ class DGField(Field):
 
                     # so far we set to all boundary faces of the cell
                     # TODO treat boundary cells where more BCs meet
-                    outer_facet_vals[ebc_cell, bn_facet , :] = state.eq_map.val_ebc[ebc_ii]
+                    outer_facet_vals[ebc_cell, bn_facet, :] = state.eq_map.val_ebc[ebc_ii*self.n_el_nod]
+                    # outer_facet_vals[ebc_cell, bn_facet , :] = state.eq_map.val_ebc[ebc_ii*self.n_el_facets : self.n_el_facets*(ebc_ii+1)]
 
         # FIXME flip outer_facet_vals to match the inner_facet_vals qp ordering
         return inner_facet_vals, outer_facet_vals[..., ::-1], whs
