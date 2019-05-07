@@ -471,7 +471,7 @@ class DGField(Field):
         n_el_facets = dim + 1 if gel.is_simplex else 2 ** dim
         return dim, n_cell, n_el_facets
 
-    def get_both_facet_qp_vals(self, dofs, region):
+    def get_both_facet_qp_vals(self, dofs, region, derivative=None):
         """
         Computes values of the variable represented by dofs in
         quadrature points located at facets, returns both values -
@@ -480,7 +480,7 @@ class DGField(Field):
         :param region:
         :return:
         """
-        facet_bf, whs = self.get_facet_base()
+        facet_bf, whs = self.get_facet_base(derivative=derivative)
 
         # facet_bf = facet_bf[:, 0, :, 0, :].T
         inner_facet_vals = nm.zeros((self.n_cell, self.n_el_facets, nm.shape(whs)[1]))
