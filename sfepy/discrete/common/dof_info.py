@@ -460,6 +460,8 @@ class EquationMap(Struct):
         self.eq_ebc = nm.atleast_1d(ii.squeeze())
         self.val_ebc = nm.atleast_1d(val_ebc[ii].squeeze())
         self.master = nm.argwhere(master_slave > 0).squeeze()
+        # FIXME hot fix for only one BC dof in master
+        self.master = self.master if self.master.shape else self.master[None] # add axis in case we squeezed too much
         self.slave = master_slave[self.master] - 1
 
         assert_((self.eq_ebc.shape == self.val_ebc.shape))

@@ -70,6 +70,9 @@ class LegendrePolySpace(PolySpace):
         :param geometry: geometry object
         :param order: approximation order, 0 for constant functions, 1 for linear etc.
         """
+        from toolz import map, reduce
+        from operator import add, mul
+
 
         PolySpace.__init__(self, name, geometry, order)
 
