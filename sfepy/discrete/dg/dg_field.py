@@ -530,22 +530,49 @@ class DGField(Field):
         inner and outer, along with weights.
         :param state: state variable containing BC info
         :param region:
-        :return:
+        :param derivative: compute derivative if truthy, compute n-th derivative if number
+        :return: inner_facet_values (n_cell, n_el_facets, n_qp), outer facet values (n_cell, n_el_facets, n_qp), weights
+                 if derivative is True: inner_facet_values (n_cell, n_el_facets, dim, n_qp), outer facet values (n_cell, n_el_facets, dim, n_qp)
+
         """
+
+        if derivative:
+            diff = int(derivative)
+        else:
+            diff = 0
+
+
         dofs = self.unravel_sol(state.data[0])
         facet_bf, whs = self.get_facet_base(derivative=derivative)
+        sane_facet_bf = facet_bf[0, 0, :, 0, :]
+        sane_facet_bf = sane_facet_bf.swapaxes(0, 1)[..., None]
 
-        inner_facet_vals = nm.zeros((self.n_cell, self.n_el_facets, nm.shape(whs)[1]))
-        inner_facet_vals[:] = nm.sum(dofs[..., None] * facet_bf[:, 0, :, 0, :].T, axis=1)
+        outputs_shape = (self.n_cell, self.n_el_facets) + (self.dim,) * diff + (nm.shape(whs)[1],)
 
-        outer_facet_vals = nm.zeros((self.n_cell, self.n_el_facets, nm.shape(whs)[1]))
+        inner_facet_vals = nm.zeros(outputs_shape)
+        inner_facet_vals_old = nm.zeros(outputs_shape)
+
+        inner_facet_vals_old[:] = nm.sum(dofs[..., None] * facet_bf[:, 0, :, 0, :].T, axis=1)
+        inner_facet_vals[:] = nm.einsum('ij...,j...->i...', dofs, sane_facet_bf)
+
+
         per_facet_neighbours = self.get_facet_neighbor_idx(region, state.eq_map)
 
         facet_vols = self.get_facet_vols(region, per_facet_neighbours)
         whs = facet_vols * whs[None, :, :, 0]
 
+        outer_facet_vals = nm.zeros(outputs_shape)
+        outer_facet_vals_old = nm.zeros(outputs_shape)
+
+
+        # outer_facet_vals[:] = nm.einsum('ij...,j...->i...', dofs[per_facet_neighbours[:, facet_n, 0]], sane_facet_bf[:, facet_n])
+
         for facet_n in range(self.n_el_facets):
-            outer_facet_vals[:, facet_n, :] = nm.sum(
+            outer_facet_vals[:, facet_n, :]  = nm.einsum('ij...,ji...->i...',
+                                                         dofs[per_facet_neighbours[:, facet_n, 0]],
+                                                         sane_facet_bf[:, per_facet_neighbours[:, facet_n, 1]])
+        for facet_n in range(self.n_el_facets):
+            outer_facet_vals_old[:, facet_n, :] = nm.sum(
                 dofs[per_facet_neighbours[:, facet_n, 0]][None, :, :, 0] *
                 facet_bf[:, 0, per_facet_neighbours[:, facet_n, 1], 0, :], axis=-1).T
 
