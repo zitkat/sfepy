@@ -4,13 +4,15 @@ import matplotlib.pyplot as plt
 from os.path import join as pjoin
 
 # sfepy imports
+from discrete.fem.periodic import match_x_line, match_y_line
+from discrete.variables import DGFieldVariable
 from sfepy.discrete.fem import Mesh, FEDomain
 from sfepy.discrete.fem.meshio import UserMeshIO
 from sfepy.base.base import Struct
 from sfepy.base.base import IndexedStruct
 from sfepy.discrete import (FieldVariable, Material, Integral, Function,
                             Equation, Equations, Problem)
-from sfepy.discrete.conditions import InitialCondition, EssentialBC, Conditions
+from sfepy.discrete.conditions import InitialCondition, EssentialBC, Conditions, PeriodicBC
 from sfepy.solvers.ls import ScipyDirect
 from sfepy.solvers.nls import Newton
 from sfepy.solvers.ts_solvers import SimpleTimeSteppingSolver
@@ -75,11 +77,20 @@ mesh = gen_block_mesh((1., 1.), (20, 2), (.5, 0.5))
 integral = Integral('i', order=approx_order * 2)
 domain = FEDomain(domain_name, mesh)
 omega = domain.create_region('Omega', 'all')
+
+left = domain.create_region('left',
+                              'vertices in x == 0' ,
+                              'edge')
+
+right = domain.create_region('right',
+                              'vertices in x == 1' ,
+                              'edge')
+
 field = DGField('dgfu', nm.float64, 'scalar', omega,
                   approx_order=approx_order)
 
-u = FieldVariable('u', 'unknown', field, history=1)
-v = FieldVariable('v', 'test', field, primary_var_name='u')
+u = DGFieldVariable('u', 'unknown', field, history=1)
+v = DGFieldVariable('v', 'test', field, primary_var_name='u')
 
 
 MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u", integral, omega, u=u, v=v)
@@ -100,33 +111,14 @@ eqs = Equations([eq])
 #------------------------------
 #| Create bounrady conditions |
 #------------------------------
-
+dirichlet_bc_u = EssentialBC('left_fix_u', left, {'u.all' : 1.0})
+periodic2_bc_u = PeriodicBC('left_right', [left, right],{'u.all' : 'u.all'}, match='match_y_line')
 #----------------------------
 #| Create initial condition |
 #----------------------------
 def ic_wrap(x, ic=None):
     return gsmooth(x[..., 0:1])
-#-----------
-#| Plot IC |
-#-----------
-# X = nm.arange(0, 1, 0.005)
-# Y = nm.arange(0, 1, 0.005)
-# X, Y = nm.meshgrid(X, Y)
-# coors = nm.dstack((X[:, :, None], Y[:, :, None]))
-# from mpl_toolkits.mplot3d import Axes3D
-# import matplotlib.pyplot as plt
-# from matplotlib import cm
-#
-# fig = plt.figure()
-# ax = fig.gca(projection='3d')
-# Z = ic_wrap(coors)
-# surf = ax.plot_surface(X, Y, Z[:, :, 0], cmap=cm.coolwarm,
-#                        linewidth=0, antialiased=False, alpha=.6)
-#
-# fig = plt.figure()
-# ax = fig.gca()
-# ax.contour(X, Y, Z[..., 0])
-# plt.show()
+
 ic_fun = Function('ic_fun', ic_wrap)
 ics = InitialCondition('ic', omega, {'u.0': ic_fun})
 
@@ -137,8 +129,14 @@ pb = Problem(problem_name, equations=eqs, conf=Struct(options={"save_times": sav
                                                      ebcs={}, epbcs={}, lcbcs={}, materials={}),
              active_only=False)
 pb.setup_output(output_dir=output_folder, output_format=output_format)
+pb.functions = {'match_x_line':  Function("match_x_line", match_x_line),
+                'match_y_line':  Function("match_y_line", match_y_line)}
 pb.set_ics(Conditions([ics]))
-
+pb.set_bcs(ebcs=Conditions([dirichlet_bc_u]),
+#            epbcs=Conditions([periodic1_bc_u,
+#                              # periodic2_bc_u
+#                              ])
+            )
 
 #------------------
 #| Create limiter |
