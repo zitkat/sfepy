@@ -15,11 +15,14 @@ from sfepy.solvers.nls import Newton
 from sfepy.solvers.ts_solvers import SimpleTimeSteppingSolver
 
 from sfepy.terms.terms_dot import ScalarDotMGradScalarTerm, DotProductVolumeTerm
+
+from sfepy.terms.terms_navier_stokes import DivGradTerm
+from sfepy.terms.terms_diffusion import LaplaceTerm
 from sfepy.discrete.fem.meshio import VTKMeshIO
 from sfepy.base.ioutils import ensure_path
 
 # local imports
-from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm
+from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm, DiffusionDGFluxTerm, DiffusionInteriorPenaltyTerm
 from sfepy.discrete.dg.dg_tssolver import TVDRK3StepSolver, RK4StepSolver, EulerStepSolver
 from sfepy.discrete.dg.dg_field import DGField
 from sfepy.discrete.dg.dg_limiters import IdentityLimiter, MomentLimiter1D
@@ -32,7 +35,8 @@ from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
 
 
 #vvvvvvvvvvvvvvvv#
-approx_order = 0
+approx_order = 2
+CFL = .8
 #^^^^^^^^^^^^^^^^#
 # Setup  names
 domain_name = "domain_1D"
@@ -87,10 +91,26 @@ StiffT = ScalarDotMGradScalarTerm("adv_stiff(a.val, u, v)", "a.val, u[-1], v", i
                                     u=u, v=v, a=a)
 
 alpha = Material('alpha', val=[.0])
-FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
-                         integral, omega, u=u, v=v, a=a, alpha=alpha)
+AdvFluxT = AdvectDGFluxTerm("adv_lf_flux(alpha.val, a.val, v, u)", "a.val, v, u[-1]",
+                            integral, omega, u=u, v=v, a=a, alpha=alpha)
 
-eq = Equation('balance', MassT + StiffT - FluxT)
+diffusion_tensor = .02
+D = Material('D', val=[diffusion_tensor])
+DivGrad = LaplaceTerm("diff_lap(D.val, v, u)", "D.val, v, u[-1]",
+                      integral, omega, u=u, v=v, D=D)
+
+DiffFluxT = DiffusionDGFluxTerm("diff_lf_flux(D.val, v, u)", "D.val, v,  u[-1]",
+                                integral, omega, u=u, v=v, D=D)
+Cw = Material("Cw", values={".val": 10})
+DiffPen = DiffusionInteriorPenaltyTerm("diff_pen(Cw.val, v, u)", "Cw.val, v, u[-1]",
+                                       integral, omega, u=u, v=v, Cw=Cw)
+
+
+eq = Equation('balance', MassT
+              # + StiffT - AdvFluxT
+              -(+ DivGrad - DiffFluxT
+              + diffusion_tensor * DiffPen)
+              )
 eqs = Equations([eq])
 
 
@@ -104,7 +124,8 @@ right_fix_u = EssentialBC('right_fix_u', right, {'u.all' : 0.0})
 #| Create initial condition |
 #----------------------------
 def ic_wrap(x, ic=None):
-    return ghump(x - .3)
+    return ghump(x - .5)
+
 
 ic_fun = Function('ic_fun', ic_wrap)
 ics = InitialCondition('ic', omega, {'u.0': ic_fun})
@@ -128,10 +149,9 @@ limiter = IdentityLimiter
 #---------------------------
 #| Set time discretization |
 #---------------------------
-CFL = .4
 max_velo = nm.max(nm.abs(velo))
 t0 = 0
-t1 = 1
+t1 = 1.
 dx = nm.min(mesh.cmesh.get_volumes(1))
 dt = dx / max_velo * CFL/(2*approx_order + 1)
 tn = int(nm.ceil((t1 - t0) / dt))

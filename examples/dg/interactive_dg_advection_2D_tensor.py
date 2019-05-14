@@ -53,16 +53,16 @@ clear_folder(pjoin(output_folder, "*."+output_format))
 #------------
 #| Get mesh |
 #-----------
-mesh = gen_block_mesh((1., 1.), (20, 20), (0.5, 0.5))
+mesh = gen_block_mesh((1., 1.), (50, 50), (0.5, 0.5))
 
 mesh_name = "tens_2D_mesh"
-# mesh = Mesh.from_file("mesh/" + mesh_name + ".vtk")
+mesh = Mesh.from_file("mesh/" + mesh_name + ".vtk")
 
 angle = - nm.pi/5
 rotm = nm.array([[nm.cos(angle),  -nm.sin(angle)],
                  [nm.sin(angle),  nm.cos(angle)]])
 velo = -nm.sum(rotm.T * nm.array([1., 0.]), axis=-1)[:, None]
-velo = nm.array([[0., -1.]]).T
+velo = nm.array([[-1., 0.]]).T
 max_velo = nm.max(nm.linalg.norm(velo))
 
 
@@ -118,7 +118,7 @@ eqs = Equations([eq])
 #------------------------------
 dirichlet_bc_u = EssentialBC('left_fix_u', left, {'u.all' : 1.0})
 periodic1_bc_u = PeriodicBC('top_bot', [top, bottom],{'u.all' : 'u.all'}, match='match_x_line')
-periodic2_bc_u = PeriodicBC('left_right', [left, right],{'u.all' : 'u.all'}, match='match_y_line')
+periodic2_bc_u = PeriodicBC('left_right', [right, left],{'u.all' : 'u.all'}, match='match_y_line')
 
 # right_fix_u = EssentialBC('right_fix_u', right, {'u.all' : 0.0})
 
@@ -136,7 +136,7 @@ ics = InitialCondition('ic', omega, {'u.0': ic_fun})
 #------------------
 #| Create problem |
 #------------------
-pb = Problem(problem_name, equations=eqs, conf=Struct(options={"save_times": 101}, ics={},
+pb = Problem(problem_name, equations=eqs, conf=Struct(options={"save_times": save_timestn}, ics={},
                                                      ebcs={}, epbcs={}, lcbcs={}, materials={},
                                                       ),
              active_only=False)
@@ -145,8 +145,8 @@ pb.functions  = {'match_x_line':  Function("match_x_line", match_x_line),
                  'match_y_line':  Function("match_y_line", match_y_line)}
 pb.set_ics(Conditions([ics]))
 pb.set_bcs(#ebcs=Conditions([dirichlet_bc_u]),
-           epbcs=Conditions([periodic1_bc_u,
-                             # periodic2_bc_u
+           epbcs=Conditions([#periodic1_bc_u,
+                             periodic2_bc_u
                              ]))
 
 #------------------
@@ -159,7 +159,7 @@ limiter = IdentityLimiter
 #---------------------------
 max_velo = nm.max(nm.linalg.norm(velo))
 t0 = 0
-t1 = 3
+t1 = 1
 dx = nm.min(mesh.cmesh.get_volumes(2))
 dt = dx / max_velo * CFL/(2*approx_order + 1)
 tn = int(nm.ceil((t1 - t0) / dt))

@@ -1,61 +1,72 @@
 import numpy as nm
+from numpy.linalg import norm
 import matplotlib.pyplot as plt
 from os.path import join as pjoin
 
 # sfepy imports
+from discrete.fem.periodic import match_x_line, match_y_line
 from sfepy.discrete.fem import Mesh, FEDomain
 from sfepy.discrete.fem.meshio import UserMeshIO
 from sfepy.base.base import Struct
 from sfepy.base.base import IndexedStruct
 from sfepy.discrete import (FieldVariable, Material, Integral, Function,
                             Equation, Equations, Problem)
-from sfepy.discrete.conditions import InitialCondition, EssentialBC, Conditions
+from sfepy.discrete.conditions import InitialCondition, EssentialBC, Conditions, PeriodicBC
 from sfepy.solvers.ls import ScipyDirect
 from sfepy.solvers.nls import Newton
 from sfepy.solvers.ts_solvers import SimpleTimeSteppingSolver
-
-from sfepy.terms.terms_dot import ScalarDotMGradScalarTerm, DotProductVolumeTerm
+from sfepy.mesh.mesh_generators import gen_block_mesh
 from sfepy.discrete.fem.meshio import VTKMeshIO
 from sfepy.base.ioutils import ensure_path
 
+from sfepy.discrete.variables import DGFieldVariable
+
+from sfepy.terms.terms_dot import ScalarDotMGradScalarTerm, DotProductVolumeTerm
+from terms.terms_diffusion import LaplaceTerm
+
+
 # local imports
-from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm
-from sfepy.discrete.dg.dg_tssolver import TVDRK3StepSolver, RK4StepSolver, EulerStepSolver
+from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm, DiffusionDGFluxTerm, DiffusionInteriorPenaltyTerm
+from sfepy.discrete.dg.dg_tssolver \
+    import EulerStepSolver, TVDRK3StepSolver
 from sfepy.discrete.dg.dg_field import DGField
 from sfepy.discrete.dg.dg_limiters import IdentityLimiter, MomentLimiter1D
 
+from sfepy.discrete.dg.my_utils.inits_consts \
+    import left_par_q, gsmooth, const_u, ghump, superic
 
-from sfepy.discrete.dg.my_utils.inits_consts import \
-    left_par_q, gsmooth, const_u, ghump, superic
-from sfepy.discrete.dg.my_utils.visualizer import load_1D_vtks, plot1D_DG_sol
 from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
 
 
 #vvvvvvvvvvvvvvvv#
-approx_order = 0
+approx_order = 3
+CFL = .8
 #^^^^^^^^^^^^^^^^#
 # Setup  names
-domain_name = "domain_1D"
-problem_name = "iadv_1D"
+domain_name = "domain_2D"
+problem_name = "idiff_2D_tens"
 output_folder = pjoin("output", problem_name, str(approx_order))
-output_format = "vtk"
+output_format = "msh"
 mesh_output_folder = "output/mesh"
 save_timestn = 100
-clear_folder(pjoin(output_folder, "*" + output_format))
+clear_folder(pjoin(output_folder, "*."+output_format))
+
 
 #------------
 #| Get mesh |
-#------------
-X1 = 0.
-XN = 1.
-n_nod = 100
-n_el = n_nod - 1
-coors = nm.linspace(X1, XN, n_nod).reshape((n_nod, 1))
-conn = nm.arange(n_nod, dtype=nm.int32).repeat(2)[1:-1].reshape((-1, 2))
-mat_ids = nm.zeros(n_nod - 1, dtype=nm.int32)
-descs = ['1_2']
-mesh = Mesh.from_data('uniform_1D{}'.format(n_nod), coors, None,
-                      [conn], [mat_ids], descs)
+#-----------
+mesh = gen_block_mesh((1., 1.), (50, 50), (0.5, 0.5))
+
+mesh_name = "tens_2D_mesh"
+mesh = Mesh.from_file("mesh/" + mesh_name + ".vtk")
+
+angle = - nm.pi/5
+rotm = nm.array([[nm.cos(angle),  -nm.sin(angle)],
+                 [nm.sin(angle),  nm.cos(angle)]])
+velo = -nm.sum(rotm.T * nm.array([1., 0.]), axis=-1)[:, None]
+velo = nm.array([[0., -1.]]).T
+max_velo = nm.max(nm.linalg.norm(velo))
+
 
 
 #-----------------------------
@@ -65,23 +76,33 @@ mesh = Mesh.from_data('uniform_1D{}'.format(n_nod), coors, None,
 integral = Integral('i', order=approx_order * 2)
 domain = FEDomain(domain_name, mesh)
 omega = domain.create_region('Omega', 'all')
-left = domain.create_region('Gamma1',
-                              'vertices in x == %.10f' % X1,
-                              'vertex')
-right = domain.create_region('Gamma2',
-                              'vertices in x == %.10f' % XN,
-                              'vertex')
+
+left = domain.create_region('left',
+                              'vertices in x == 0' ,
+                              'edge')
+
+right = domain.create_region('right',
+                              'vertices in x == 1' ,
+                              'edge')
+
+top = domain.create_region('top',
+                              'vertices in y == 1' ,
+                              'edge')
+
+bottom = domain.create_region('bottom',
+                              'vertices in y == 0' ,
+                              'edge')
+
+
 field = DGField('dgfu', nm.float64, 'scalar', omega,
-                approx_order=approx_order)
+                  approx_order=approx_order)
 
-u = FieldVariable('u', 'unknown', field, history=1)
-v = FieldVariable('v', 'test', field, primary_var_name='u')
+u = DGFieldVariable('u', 'unknown', field, history=1)
+v = DGFieldVariable('v', 'test', field, primary_var_name='u')
 
 
-MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u",
-                             integral, omega, u=u, v=v)
+MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u", integral, omega, u=u, v=v)
 
-velo = 1.0
 a = Material('a', val=[velo])
 StiffT = ScalarDotMGradScalarTerm("adv_stiff(a.val, u, v)", "a.val, u[-1], v", integral, omega,
                                     u=u, v=v, a=a)
@@ -90,35 +111,61 @@ alpha = Material('alpha', val=[.0])
 FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
                          integral, omega, u=u, v=v, a=a, alpha=alpha)
 
-eq = Equation('balance', MassT + StiffT - FluxT)
+diffusion_tensor = 0.02# nm.array([[.002, 0],
+                        #           [0, .002]]).T
+D = Material('D', val=[diffusion_tensor])
+DivGrad = LaplaceTerm("diff_lap(D.val, v, u)", "D.val, v, u[-1]",
+                      integral, omega, u=u, v=v, D=D)
+
+DiffFluxT = DiffusionDGFluxTerm("diff_lf_flux(D.val, v, u)", "D.val, v,  u[-1]",
+                                integral, omega, u=u, v=v, D=D)
+Cw = Material("Cw", values={".val": 10})
+DiffPen = DiffusionInteriorPenaltyTerm("diff_pen(Cw.val, v, u)", "Cw.val, v, u[-1]",
+                                       integral, omega, u=u, v=v, Cw=Cw)
+
+eq = Equation('balance', MassT
+              # + StiffT - FluxT
+                -(+ DivGrad - DiffFluxT)
+              - diffusion_tensor * DiffPen
+              )
 eqs = Equations([eq])
 
 
 #------------------------------
 #| Create bounrady conditions |
 #------------------------------
-left_fix_u = EssentialBC('left_fix_u', left, {'u.all' : 1.0})
-right_fix_u = EssentialBC('right_fix_u', right, {'u.all' : 0.0})
+dirichlet_bc_u = EssentialBC('left_fix_u', left, {'u.all' : 1.0})
+periodic1_bc_u = PeriodicBC('top_bot', [top, bottom],{'u.all' : 'u.all'}, match='match_x_line')
+periodic2_bc_u = PeriodicBC('left_right', [left, right],{'u.all' : 'u.all'}, match='match_y_line')
+
+# right_fix_u = EssentialBC('right_fix_u', right, {'u.all' : 0.0})
+
 
 #----------------------------
 #| Create initial condition |
 #----------------------------
 def ic_wrap(x, ic=None):
-    return ghump(x - .3)
+    return gsmooth(x[..., 0:1] - .3)*gsmooth(x[..., 1:] - .3)
+
 
 ic_fun = Function('ic_fun', ic_wrap)
 ics = InitialCondition('ic', omega, {'u.0': ic_fun})
-
 
 #------------------
 #| Create problem |
 #------------------
 pb = Problem(problem_name, equations=eqs, conf=Struct(options={"save_times": save_timestn}, ics={},
-                                                     ebcs={}, epbcs={}, lcbcs={}, materials={}),
+                                                     ebcs={}, epbcs={}, lcbcs={}, materials={},
+                                                      ),
              active_only=False)
 pb.setup_output(output_dir=output_folder, output_format=output_format)
+pb.functions  = {'match_x_line':  Function("match_x_line", match_x_line),
+                 'match_y_line':  Function("match_y_line", match_y_line)}
 pb.set_ics(Conditions([ics]))
-
+pb.set_bcs(#ebcs=Conditions([dirichlet_bc_u]),
+           epbcs=Conditions([periodic1_bc_u,
+                             # periodic2_bc_u
+                             ]))
 
 #------------------
 #| Create limiter |
@@ -128,11 +175,10 @@ limiter = IdentityLimiter
 #---------------------------
 #| Set time discretization |
 #---------------------------
-CFL = .4
-max_velo = nm.max(nm.abs(velo))
+max_velo = nm.max(nm.linalg.norm(velo))
 t0 = 0
 t1 = 1
-dx = nm.min(mesh.cmesh.get_volumes(1))
+dx = nm.min(mesh.cmesh.get_volumes(2))
 dt = dx / max_velo * CFL/(2*approx_order + 1)
 tn = int(nm.ceil((t1 - t0) / dt))
 dtdx = dt / dx
@@ -168,39 +214,8 @@ print("CFL coefficient was {0} and order correction {1}".format(CFL, 1/(2*approx
 print("Courant number c = max(abs(u)) * dt/dx = {0}".format(max_velo * dtdx))
 print("------------------------------------------")
 print("Time stepping solver is {}".format(tss.name))
-print("Limiter used: {}".format(limiter.name))
+# print("Limiter used: {}".format(limiter.name))
 print("======================================")
 
 pb.set_solver(tss)
-state_end = pb.solve()
-
-
-#----------
-#| Plot 1D|
-#----------
-# lmesh, u = load_1D_vtks("./output/adv_1D", "domain_1D", order=approx_order)
-# plot1D_DG_sol(lmesh, t0, t1, u, tn=30, ic=ic_wrap,
-#               delay=100, polar=False)
-#
-# from sfepy.discrete.dg.dg_field import get_unraveler, get_raveler
-# from sfepy.discrete.dg.my_utils.visualizer import \
-#     load_state_1D_vtk, plot_1D_legendre_dofs, reconstruct_legendre_dofs
-# coors, u_end = load_state_1D_vtk("output/adv_1D/domain_1D_end.vtk", order=approx_order)
-#
-#
-# u_start = get_unraveler(field.n_el_nod, field.n_cell)(state0.vec).swapaxes(0, 1)[..., None]
-# # u_end = get_unraveler(field.n_el_nod, field.n_cell)(state_end.vec).swapaxes(0, 1)[..., None]
-#
-#
-# plot_1D_legendre_dofs(coors, [u_start.swapaxes(0, 1)[:, :, 0], u_end.swapaxes(0, 1)[:, :, 0]])
-#
-# plt.figure("reconstructed")
-# ww_s, xx = reconstruct_legendre_dofs(coors, None, u_end)
-# ww_e, _ = reconstruct_legendre_dofs(coors, None, u_start)
-#
-# plt.plot(xx, ww_s[:, 0])
-# plt.plot(xx, ww_e[:, 0])
-# plt.show()
-from sfepy.discrete.dg.my_utils.plot_1D_dg import load_and_plot_fun
-
-load_and_plot_fun(output_folder, domain_name, t0, t1, min(tn, save_timestn), approx_order, ic_fun)
+pb.solve()

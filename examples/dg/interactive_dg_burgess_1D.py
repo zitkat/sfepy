@@ -19,7 +19,7 @@ from sfepy.discrete.fem.meshio import VTKMeshIO
 from sfepy.base.ioutils import ensure_path
 
 # local imports
-from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm
+from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm, NonlinearHyperDGFluxTerm, NonlinScalarDotGradTerm
 from sfepy.discrete.dg.dg_tssolver import TVDRK3StepSolver, RK4StepSolver, EulerStepSolver
 from sfepy.discrete.dg.dg_field import DGField
 from sfepy.discrete.dg.dg_limiters import IdentityLimiter, MomentLimiter1D
@@ -32,16 +32,17 @@ from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
 
 
 #vvvvvvvvvvvvvvvv#
-approx_order = 0
+approx_order = 1
 #^^^^^^^^^^^^^^^^#
-# Setup  names
+
+# Setup output names
 domain_name = "domain_1D"
-problem_name = "iadv_1D"
+problem_name = "iburgess_1D"
 output_folder = pjoin("output", problem_name, str(approx_order))
 output_format = "vtk"
 mesh_output_folder = "output/mesh"
 save_timestn = 100
-clear_folder(pjoin(output_folder, "*" + output_format))
+clear_folder(pjoin(output_folder, "*." + output_format))
 
 #------------
 #| Get mesh |
@@ -81,14 +82,38 @@ v = FieldVariable('v', 'test', field, primary_var_name='u')
 MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u",
                              integral, omega, u=u, v=v)
 
-velo = 1.0
+velo = nm.array(1.0)
+
+def adv_fun(u):
+    vu = velo.T * u[..., None]
+    return vu
+
+def adv_fun_d(u):
+    v1 = velo.T * nm.ones(u.shape + (1,))
+    return v1
+
+burg_velo = velo.T / nm.linalg.norm(velo)
+
+def burg_fun(u):
+    vu = burg_velo * u[..., None]**2
+    return vu
+
+def burg_fun_d(u):
+    v1 = 2 * burg_velo * u[..., None]
+    return v1
+
 a = Material('a', val=[velo])
-StiffT = ScalarDotMGradScalarTerm("adv_stiff(a.val, u, v)", "a.val, u[-1], v", integral, omega,
-                                    u=u, v=v, a=a)
+# nonlin = Material('nonlin', values={'.fun' : adv_fun, '.dfun' : adv_fun_d})
+nonlin =  Material('nonlin', values={'.fun': burg_fun, '.dfun': burg_fun_d})
+StiffT = NonlinScalarDotGradTerm("burgess_stiff(f, df, u, v)", "nonlin.fun , nonlin.dfun, u[-1], v",
+    integral, omega, u=u, v=v, nonlin=nonlin)
 
 alpha = Material('alpha', val=[.0])
-FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
-                         integral, omega, u=u, v=v, a=a, alpha=alpha)
+# FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
+#                          integral, omega, u=u, v=v, a=a, alpha=alpha)
+
+FluxT = NonlinearHyperDGFluxTerm("burgess_lf_flux(f, df, u, v)", "nonlin.fun , nonlin.dfun, v, u[-1]",
+    integral, omega, u=u, v=v, nonlin=nonlin)
 
 eq = Equation('balance', MassT + StiffT - FluxT)
 eqs = Equations([eq])
@@ -123,15 +148,15 @@ pb.set_ics(Conditions([ics]))
 #------------------
 #| Create limiter |
 #------------------
-limiter = IdentityLimiter
+limiter = MomentLimiter1D
 
 #---------------------------
 #| Set time discretization |
 #---------------------------
-CFL = .4
+CFL = .2
 max_velo = nm.max(nm.abs(velo))
 t0 = 0
-t1 = 1
+t1 = .2
 dx = nm.min(mesh.cmesh.get_volumes(1))
 dt = dx / max_velo * CFL/(2*approx_order + 1)
 tn = int(nm.ceil((t1 - t0) / dt))
@@ -149,7 +174,7 @@ tss_conf = {'t0': t0,
             'n_step': tn,
             "limiter": limiter}
 
-tss = EulerStepSolver(tss_conf,
+tss = TVDRK3StepSolver(tss_conf,
                          nls=nls, context=pb, verbose=True)
 
 

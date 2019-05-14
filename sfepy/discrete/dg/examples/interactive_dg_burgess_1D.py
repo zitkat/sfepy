@@ -1,6 +1,6 @@
 import numpy as nm
 import matplotlib.pyplot as plt
-from os.path import join as pjoin
+from os.path import  join as pjoin
 
 # sfepy imports
 from sfepy.discrete.fem import Mesh, FEDomain
@@ -19,29 +19,28 @@ from sfepy.discrete.fem.meshio import VTKMeshIO
 from sfepy.base.ioutils import ensure_path
 
 # local imports
-from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm
+from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm, NonlinearHyperDGFluxTerm, NonlinScalarDotGradTerm
 from sfepy.discrete.dg.dg_tssolver import TVDRK3StepSolver, RK4StepSolver, EulerStepSolver
 from sfepy.discrete.dg.dg_field import DGField
-from sfepy.discrete.dg.dg_limiters import IdentityLimiter, MomentLimiter1D
+from sfepy.discrete.dg.dg_limiters import IdentityLimiter, Moment1DLimiter
 
 
 from sfepy.discrete.dg.my_utils.inits_consts import \
     left_par_q, gsmooth, const_u, ghump, superic
 from sfepy.discrete.dg.my_utils.visualizer import load_1D_vtks, plot1D_DG_sol
-from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
+from sfepy.discrete.dg.my_utils.read_plot_1Ddata import clear_folder
 
 
 #vvvvvvvvvvvvvvvv#
-approx_order = 0
+approx_order = 1
 #^^^^^^^^^^^^^^^^#
-# Setup  names
+
+# Setup output names
 domain_name = "domain_1D"
-problem_name = "iadv_1D"
-output_folder = pjoin("output", problem_name, str(approx_order))
-output_format = "vtk"
-mesh_output_folder = "output/mesh"
+output_folder = "output/burgesss_1D/" + str(approx_order)
+output_folder_mesh = "output/mesh"
 save_timestn = 100
-clear_folder(pjoin(output_folder, "*" + output_format))
+clear_folder(output_folder)
 
 #------------
 #| Get mesh |
@@ -54,8 +53,13 @@ coors = nm.linspace(X1, XN, n_nod).reshape((n_nod, 1))
 conn = nm.arange(n_nod, dtype=nm.int32).repeat(2)[1:-1].reshape((-1, 2))
 mat_ids = nm.zeros(n_nod - 1, dtype=nm.int32)
 descs = ['1_2']
-mesh = Mesh.from_data('uniform_1D{}'.format(n_nod), coors, None,
+mesh = Mesh.from_data('advection_1d', coors, None,
                       [conn], [mat_ids], descs)
+
+outfile = "output/mesh/uniform_1D_mesh.vtk"
+ensure_path(outfile)
+meshio = VTKMeshIO(outfile)
+meshio.write(outfile, mesh)
 
 
 #-----------------------------
@@ -63,7 +67,7 @@ mesh = Mesh.from_data('uniform_1D{}'.format(n_nod), coors, None,
 #-----------------------------
 
 integral = Integral('i', order=approx_order * 2)
-domain = FEDomain(domain_name, mesh)
+domain = FEDomain('domain_1D', mesh)
 omega = domain.create_region('Omega', 'all')
 left = domain.create_region('Gamma1',
                               'vertices in x == %.10f' % X1,
@@ -78,17 +82,27 @@ u = FieldVariable('u', 'unknown', field, history=1)
 v = FieldVariable('v', 'test', field, primary_var_name='u')
 
 
+
+
 MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u",
                              integral, omega, u=u, v=v)
 
-velo = 1.0
+velo = 2.0
 a = Material('a', val=[velo])
-StiffT = ScalarDotMGradScalarTerm("adv_stiff(a.val, u, v)", "a.val, u[-1], v", integral, omega,
-                                    u=u, v=v, a=a)
+# TODO u and v are flipped what now?!
+StiffT = NonlinScalarDotGradTerm(integral, omega,
+                                 f=lambda u: nm.power(u[..., None], 2),
+                                 df=lambda u: 2*u[..., None],
+                                 u=u, v=v)
 
 alpha = Material('alpha', val=[.0])
-FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
-                         integral, omega, u=u, v=v, a=a, alpha=alpha)
+# FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
+#                          integral, omega, u=u, v=v, a=a, alpha=alpha)
+
+FluxT = NonlinearHyperDGFluxTerm(integral, omega,
+                                 f=lambda u: nm.power(u[..., None], 2),
+                                 df=lambda u: 2*u[..., None],
+                                 u=u, v=v, alpha=alpha)
 
 eq = Equation('balance', MassT + StiffT - FluxT)
 eqs = Equations([eq])
@@ -97,8 +111,8 @@ eqs = Equations([eq])
 #------------------------------
 #| Create bounrady conditions |
 #------------------------------
-left_fix_u = EssentialBC('left_fix_u', left, {'u.all' : 1.0})
-right_fix_u = EssentialBC('right_fix_u', right, {'u.all' : 0.0})
+left_fix_u = EssentialBC('left_fix_u', left, {'u.all' : 3.2})#, times="all")
+right_fix_u = EssentialBC('right_fix_u', right, {'u.all' : 4.2})#, times="all")
 
 #----------------------------
 #| Create initial condition |
@@ -113,30 +127,34 @@ ics = InitialCondition('ic', omega, {'u.0': ic_fun})
 #------------------
 #| Create problem |
 #------------------
-pb = Problem(problem_name, equations=eqs, conf=Struct(options={"save_times": save_timestn}, ics={},
-                                                     ebcs={}, epbcs={}, lcbcs={}, materials={}),
-             active_only=False)
-pb.setup_output(output_dir=output_folder, output_format=output_format)
+pb = Problem('advection', equations=eqs, conf=Struct(options={"save_times": save_timestn}, ics={},
+                                                     ebcs={}, epbcs={}, lcbcs={}, materials={}))
+pb.setup_output(output_dir=output_folder)  # , output_format="msh")
+# pb.set_bcs(ebcs=Conditions([left_fix_u, right_fix_u]))
 pb.set_ics(Conditions([ics]))
+
+state0 = pb.get_initial_state()
+pb.save_state(pjoin(output_folder, "domain_1D_start.vtk"), state=state0)
 
 
 #------------------
 #| Create limiter |
 #------------------
-limiter = IdentityLimiter
+limiter = Moment1DLimiter
+# limiter = IdentityLimiter
+
 
 #---------------------------
 #| Set time discretization |
 #---------------------------
-CFL = .4
+CFL = .1
 max_velo = nm.max(nm.abs(velo))
 t0 = 0
-t1 = 1
-dx = nm.min(mesh.cmesh.get_volumes(1))
-dt = dx / max_velo * CFL/(2*approx_order + 1)
+t1 = .2
+dx = (XN - X1) / n_nod
+dt = dx / nm.abs(velo) * CFL/(2*approx_order + 1)
 tn = int(nm.ceil((t1 - t0) / dt))
 dtdx = dt / dx
-
 #------------------
 #| Create solver |
 #------------------
@@ -144,13 +162,17 @@ ls = ScipyDirect({})
 nls_status = IndexedStruct()
 nls = Newton({'is_linear': True}, lin_solver=ls, status=nls_status)
 
-tss_conf = {'t0': t0,
-            't1': t1,
-            'n_step': tn,
-            "limiter": limiter}
+tss_conf = {'t0': t0, 't1': t1, 'n_step': tn, 'limiter': limiter}
+# tss = EulerStepSolver({'t0': t0, 't1': t1, 'n_step': tn},
+#                          nls=nls, context=pb, verbose=True,
+#                         post_stage_hook=limiter)
+#
+tss = TVDRK3StepSolver(tss_conf,
+                         nls=nls, context=pb, verbose=True,
+                        limiter=limiter)
 
-tss = EulerStepSolver(tss_conf,
-                         nls=nls, context=pb, verbose=True)
+# tss = RK4StepSolver({'t0': t0, 't1': t1, 'n_step': tn},
+#                          nls=nls, context=pb, verbose=True, post_stage_hook=limiter)
 
 
 #---------
@@ -173,6 +195,7 @@ print("======================================")
 
 pb.set_solver(tss)
 state_end = pb.solve()
+pb.save_state(pjoin(output_folder, "domain_1D_end.vtk"), state=state_end)
 
 
 #----------
@@ -201,6 +224,6 @@ state_end = pb.solve()
 # plt.plot(xx, ww_s[:, 0])
 # plt.plot(xx, ww_e[:, 0])
 # plt.show()
-from sfepy.discrete.dg.my_utils.plot_1D_dg import load_and_plot_fun
+from sfepy.discrete.dg.my_utils.read_plot_1Ddata import load_and_plot_fun
 
 load_and_plot_fun(output_folder, domain_name, t0, t1, min(tn, save_timestn), approx_order, ic_fun)
