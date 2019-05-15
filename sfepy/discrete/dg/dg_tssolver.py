@@ -12,6 +12,7 @@ from sfepy.solvers.ts_solvers import standard_ts_call
 from sfepy.solvers.solvers import SolverMeta, NonlinearSolver
 from sfepy.base.log import Log, get_logging_conf
 
+
 class DGMultiStageTS(TimeSteppingSolver):
     """
     Explicit time stepping solver with multistage solve_step
@@ -60,7 +61,6 @@ class DGMultiStageTS(TimeSteppingSolver):
         else:
             self.post_stage_hook = lambda x: x
 
-
     def solve_step0(self, nls, vec0):
         res = nls.fun(vec0)
         err = nm.linalg.norm(res)
@@ -69,7 +69,7 @@ class DGMultiStageTS(TimeSteppingSolver):
 
         return vec
 
-    def solve_step(self, ts, nls, vec, prestep_fun=None,  poststep_fun=None, status=None):
+    def solve_step(self, ts, nls, vec, prestep_fun=None, poststep_fun=None, status=None):
         raise NotImplementedError("Called abstract solver, call subclass.")
 
     def output_step_info(self, ts):
@@ -214,7 +214,6 @@ class TVDRK3StepSolver(DGMultiStageTS):
 
         vec_x1 = self.post_stage_hook(vec_x1)
 
-
         # ----2nd stage----
         # ts.set_substep_time(time + 1./2. * ts.dt)
         # prestep_fun(ts, vec_x1)
@@ -224,7 +223,7 @@ class TVDRK3StepSolver(DGMultiStageTS):
                             eps_a=eps_a, eps_r=eps_r, mtx=mtx_a,
                             status=ls_status)
 
-        vec_x2 = (3 * vec_x + vec_x1 + ts.dt * (vec_dx - vec_x1))/4
+        vec_x2 = (3 * vec_x + vec_x1 + ts.dt * (vec_dx - vec_x1)) / 4
 
         vec_e = mtx_a * vec_dx - vec_r
         lerr = nla.norm(vec_e)
@@ -233,11 +232,10 @@ class TVDRK3StepSolver(DGMultiStageTS):
 
         vec_x2 = self.post_stage_hook(vec_x2)
 
-
         # ----3rd stage-----
         # ts.set_substep_time(time + 1./2. * ts.dt)
         # prestep_fun(ts, vec_x1)
-        ts.set_substep_time(1./2. * ts.dt)
+        ts.set_substep_time(1. / 2. * ts.dt)
         prestep_fun(ts, vec_x2)
         vec_r = fun(vec_x2)
         mtx_a = fun_grad(vec_x2)
@@ -245,7 +243,7 @@ class TVDRK3StepSolver(DGMultiStageTS):
                             eps_a=eps_a, eps_r=eps_r, mtx=mtx_a,
                             status=ls_status)
 
-        vec_x3 = (vec_x + 2 * vec_x2 + 2*ts.dt * (vec_dx - vec_x2))/3
+        vec_x3 = (vec_x + 2 * vec_x2 + 2 * ts.dt * (vec_dx - vec_x2)) / 3
 
         vec_e = mtx_a * vec_dx - vec_r
         lerr = nla.norm(vec_e)
@@ -309,9 +307,9 @@ class RK4StepSolver(DGMultiStageTS):
         un_vec_x1_lim = unravel(vec_x1)
 
         # ----2nd stage----
-        vec_r = fun(vec_x0 + 1./2. * ts.dt * vec_x1)
-        mtx_a = fun_grad(vec_x0 + 1./2. * ts.dt * vec_x1)
-        vec_dx = lin_solver(vec_r, #x0=vec_x0 + 1./2. * ts.dt * vec_x1,
+        vec_r = fun(vec_x0 + 1. / 2. * ts.dt * vec_x1)
+        mtx_a = fun_grad(vec_x0 + 1. / 2. * ts.dt * vec_x1)
+        vec_dx = lin_solver(vec_r,  # x0=vec_x0 + 1./2. * ts.dt * vec_x1,
                             eps_a=eps_a, eps_r=eps_r, mtx=mtx_a,
                             status=ls_status)
 
@@ -325,9 +323,9 @@ class RK4StepSolver(DGMultiStageTS):
 
         # ----3rd stage-----
 
-        vec_r = fun(vec_x0 + 1./2. * ts.dt * vec_x2)
-        mtx_a = fun_grad(vec_x0 + 1./2. * ts.dt * vec_x2)
-        vec_dx = lin_solver(vec_r, #x0=vec_x0 + 1./2. * ts.dt * vec_x2,
+        vec_r = fun(vec_x0 + 1. / 2. * ts.dt * vec_x2)
+        mtx_a = fun_grad(vec_x0 + 1. / 2. * ts.dt * vec_x2)
+        vec_dx = lin_solver(vec_r,  # x0=vec_x0 + 1./2. * ts.dt * vec_x2,
                             eps_a=eps_a, eps_r=eps_r, mtx=mtx_a,
                             status=ls_status)
 
@@ -342,7 +340,7 @@ class RK4StepSolver(DGMultiStageTS):
         # ----4th stage-----
         vec_r = fun(vec_x0 + ts.dt * vec_x3)
         mtx_a = fun_grad(vec_x0 + ts.dt * vec_x3)
-        vec_dx = lin_solver(vec_r, #x0=vec_x0 + ts.dt * vec_x3,
+        vec_dx = lin_solver(vec_r,  # x0=vec_x0 + ts.dt * vec_x3,
                             eps_a=eps_a, eps_r=eps_r, mtx=mtx_a,
                             status=ls_status)
 
@@ -354,8 +352,6 @@ class RK4StepSolver(DGMultiStageTS):
 
         un_vec_x4_lim = unravel(vec_x4)
 
-        vec_fin = vec_x0 + 1./6. * ts.dt * (vec_x1 + 2 * vec_x2 + 2 * vec_x3 + vec_x4)
+        vec_fin = vec_x0 + 1. / 6. * ts.dt * (vec_x1 + 2 * vec_x2 + 2 * vec_x3 + vec_x4)
 
         return vec_fin
-
-
