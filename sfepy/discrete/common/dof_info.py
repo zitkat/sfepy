@@ -7,9 +7,12 @@ Helper functions for the equation mapping.
 import numpy as nm
 import scipy.sparse as sp
 
-from sfepy.base.base import assert_, Struct, basestr
+from sfepy.base.base import assert_, Struct, basestr, output
 from sfepy.discrete.functions import Function
-from sfepy.discrete.conditions import get_condition_value, EssentialBC
+from sfepy.discrete.conditions import get_condition_value, EssentialBC, PeriodicBC
+
+from sfepy.discrete.dg.dg_conditions import DGPeriodicBC, DGEssentialBC
+
 
 def expand_nodes_to_dofs(nods, n_dof_per_node):
     """
@@ -290,6 +293,15 @@ class EquationMap(Struct):
         self.n_ebc = self.eq_ebc.shape[0]
         self.n_epbc = self.master.shape[0]
 
+        self.dg_ebc_names = []
+        self.dg_ebc = []
+        self.dg_ebc_val = []
+        self.dg_epbc = []
+        self.dg_epbc_names = []
+
+        self.n_dg_ebc = 0
+        self.n_dg_epbc = 0
+
     def _mark_unused(self, field):
         unused_dofs = field.get('unused_dofs')
         if unused_dofs is not None:
@@ -329,9 +341,11 @@ class EquationMap(Struct):
         - Periodic bc: master and slave DOFs must belong to the same
           field (variables can differ, though).
         """
+        self._init_empty(field)
         if bcs is None:
-            self._init_empty(field)
             return set()
+
+
 
         eq_ebc = nm.zeros((self.var_di.n_dof,), dtype=nm.int32)
         val_ebc = nm.zeros((self.var_di.n_dof,), dtype=field.dtype)
@@ -346,13 +360,21 @@ class EquationMap(Struct):
 
             active_bcs.add(bc.key)
 
-            if isinstance(bc, EssentialBC):
+            if isinstance(bc, DGEssentialBC):
+                ntype = "DGEBC"
+                region = bc.region
+            elif isinstance(bc, DGPeriodicBC):
+                ntype = "DGEPBC"
+                region=bc.region[0]
+            elif isinstance(bc, EssentialBC):
                 ntype = 'EBC'
                 region = bc.region
-
-            else:
+            elif isinstance(bc, PeriodicBC):
                 ntype = 'EPBC'
                 region = bc.regions[0]
+
+            output("Treating {} {}".format(ntype, bc.name))
+
 
             if warn:
                 clean_msg = ('warning: ignoring nonexistent %s node (%s) in '
@@ -381,6 +403,22 @@ class EquationMap(Struct):
                 # Duplicates removed here...
                 eq_ebc[eq] = 1
                 if vv is not None: val_ebc[eq] = nm.ravel(vv)
+            elif ntype == "DGEBC":
+                dofs, val = bc.dofs
+                ##
+                # Evaluate EBC values.
+                fun = get_condition_value(val, functions, 'EBC', bc.name)
+                if isinstance(fun, Function):
+                    aux = fun
+                    fun = lambda coors: aux(ts, coors,
+                                            bc=bc, problem=problem)
+
+                nods, vv = field.set_dofs(fun, region, len(dofs), clean_msg)
+                self.dg_ebc_val.append(vv)
+                bc2bfi = filed.get_facet_boundary_index(region)
+                self.dg_ebc.append(bc2bfi)
+            elif ntype == "DGEPBC":
+                pass
 
             else: # EPBC.
                 region = bc.regions[1]
