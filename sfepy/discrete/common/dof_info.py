@@ -365,7 +365,7 @@ class EquationMap(Struct):
                 region = bc.region
             elif isinstance(bc, DGPeriodicBC):
                 ntype = "DGEPBC"
-                region=bc.region[0]
+                region=bc.regions[0]
             elif isinstance(bc, EssentialBC):
                 ntype = 'EBC'
                 region = bc.region
@@ -404,6 +404,7 @@ class EquationMap(Struct):
                 eq_ebc[eq] = 1
                 if vv is not None: val_ebc[eq] = nm.ravel(vv)
             elif ntype == "DGEBC":
+
                 dofs, val = bc.dofs
                 ##
                 # Evaluate EBC values.
@@ -414,11 +415,18 @@ class EquationMap(Struct):
                                             bc=bc, problem=problem)
 
                 nods, vv = field.set_dofs(fun, region, len(dofs), clean_msg)
-                self.dg_ebc_val.append(vv)
-                bc2bfi = filed.get_facet_boundary_index(region)
+                bc2bfi = field.get_facet_boundary_index(region)
+
+                self.dg_ebc_val.append(vv.reshape(bc2bfi.shape[0], field.n_el_nod))
                 self.dg_ebc.append(bc2bfi)
+                self.n_dg_ebc += 1
             elif ntype == "DGEPBC":
-                pass
+
+                # TODO ensure matching boundaries!
+                master_bc2bfi = field.get_facet_boundary_index(region)
+                slave_bc2bfi = field.get_facet_boundary_index(bc.regions[1])
+
+                self.dg_epbc.append((master_bc2bfi, slave_bc2bfi))
 
             else: # EPBC.
                 region = bc.regions[1]
