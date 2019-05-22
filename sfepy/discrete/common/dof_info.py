@@ -414,10 +414,11 @@ class EquationMap(Struct):
                     fun = lambda coors: aux(ts, coors,
                                             bc=bc, problem=problem)
 
-                nods, vv = field.set_dofs(fun, region, len(dofs), clean_msg)
+                # nods, vv = field.set_dofs(fun, region, len(dofs), clean_msg)
+                values = field.get_qp_values(fun, region)
                 bc2bfi = field.get_facet_boundary_index(region)
 
-                self.dg_ebc_val.append(vv.reshape(bc2bfi.shape[0], field.n_el_nod))
+                self.dg_ebc_val.append(values)
                 self.dg_ebc.append(bc2bfi)
                 self.n_dg_ebc += 1
             elif ntype == "DGEPBC":
