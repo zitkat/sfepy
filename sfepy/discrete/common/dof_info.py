@@ -293,9 +293,10 @@ class EquationMap(Struct):
         self.n_ebc = self.eq_ebc.shape[0]
         self.n_epbc = self.master.shape[0]
 
-        self.dg_ebc_names = []
-        self.dg_ebc = []
-        self.dg_ebc_val = []
+        self.dg_ebc_names = {}
+        self.dg_ebc = {}
+        self.dg_ebc_val = {}
+
         self.dg_epbc = []
         self.dg_epbc_names = []
 
@@ -415,11 +416,11 @@ class EquationMap(Struct):
                                             bc=bc, problem=problem)
 
                 # nods, vv = field.set_dofs(fun, region, len(dofs), clean_msg)
-                values = field.get_qp_values(fun, region)
+                values = field.get_qp_values(fun, region, diff=bc.diff)
                 bc2bfi = field.get_facet_boundary_index(region)
 
-                self.dg_ebc_val.append(values)
-                self.dg_ebc.append(bc2bfi)
+                self.dg_ebc_val.setdefault(bc.diff, []).append(values)
+                self.dg_ebc.setdefault(bc.diff, []).append(bc2bfi)
                 self.n_dg_ebc += 1
             elif ntype == "DGEPBC":
 
