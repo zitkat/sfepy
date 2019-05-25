@@ -22,7 +22,7 @@ def get_mat(coors, mode, pb):
 
         nqp = coors.shape[0]
         nel = pb.domain.mesh.n_el
-        nqpe = nqp / nel
+        nqpe = nqp // nel
         out = nm.zeros((nqp, 6, 6), dtype=nm.float64)
 
         # set values - matrix
@@ -149,7 +149,6 @@ def define(is_opt=False):
             'set_variables' : [('Pi', 'pis', 'u')],
             'class' : cb.CorrDimDim,
             'save_name' : 'corrs_le',
-            'dump_variables' : ['u'],
         },
     }
 
