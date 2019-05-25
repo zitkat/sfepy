@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 from os.path import join as pjoin
 
 # sfepy imports
-from discrete.fem.periodic import match_x_line, match_y_line
+from sfepy.discrete.fem.periodic import match_x_line, match_y_line
+from sfepy.discrete.functions import Functionize
 from sfepy.discrete.fem import Mesh, FEDomain
 from sfepy.discrete.fem.meshio import UserMeshIO
 from sfepy.base.base import Struct
@@ -19,19 +20,20 @@ from sfepy.mesh.mesh_generators import gen_block_mesh
 from sfepy.discrete.fem.meshio import VTKMeshIO
 from sfepy.base.ioutils import ensure_path
 
-from sfepy.discrete.variables import DGFieldVariable
 
 from sfepy.terms.terms_dot import ScalarDotMGradScalarTerm, DotProductVolumeTerm
 from terms.terms_diffusion import LaplaceTerm
+from terms.terms_volume import LinearVolumeForceTerm
 
 
 
 # local imports
+from sfepy.discrete.variables import DGFieldVariable
+
 from sfepy.discrete.dg.dg_terms import AdvectDGFluxTerm, DiffusionDGFluxTerm, DiffusionInteriorPenaltyTerm
-from sfepy.discrete.dg.dg_tssolver \
-    import EulerStepSolver, TVDRK3StepSolver
+from sfepy.discrete.dg.dg_tssolver import EulerStepSolver, TVDRK3StepSolver
 from sfepy.discrete.dg.dg_field import DGField
-from sfepy.discrete.dg.dg_limiters import IdentityLimiter, MomentLimiter1D
+from sfepy.discrete.dg.dg_limiters import IdentityLimiter
 from sfepy.discrete.dg.dg_conditions import DGEssentialBC, DGPeriodicBC
 
 
@@ -40,22 +42,29 @@ from sfepy.discrete.dg.my_utils.inits_consts \
 
 from sfepy.discrete.dg.my_utils.plot_1D_dg import clear_folder
 
-# vvvvvvvvvvvvvvvv#
+# ┌---------------┐
+# |   Parameters  |
+# |vvvvvvvvvvvvvvv|
 approx_order = 3
 CFL = .8
-# ^^^^^^^^^^^^^^^^#
+t0 = 0
+t1 = 1
+# |^^^^^^^^^^^^^^^|
+# └---------------┘
+
 # Setup  names
 domain_name = "domain_2D"
-problem_name = "idiff_2D_tens"
+problem_name = "iquarteroni2_static"
 output_folder = pjoin("output", problem_name, str(approx_order))
 output_format = "msh"
 mesh_output_folder = "output/mesh"
 save_timestn = 100
 clear_folder(pjoin(output_folder, "*." + output_format))
 
-# ------------
+
+# ┌----------┐
 # | Get mesh |
-# -----------
+# └----------┘
 mesh = gen_block_mesh((1., 1.), (50, 50), (0.5, 0.5))
 
 mesh_name = "tens_2D_mesh"
@@ -65,13 +74,13 @@ angle = - nm.pi / 5
 rotm = nm.array([[nm.cos(angle), -nm.sin(angle)],
                  [nm.sin(angle), nm.cos(angle)]])
 velo = -nm.sum(rotm.T * nm.array([1., 0.]), axis=-1)[:, None]
-velo = nm.array([[0., -1.]]).T
+velo = nm.array([[1., 1.]]).T
 max_velo = nm.max(nm.linalg.norm(velo))
 
-# -----------------------------
-# | Create problem components |
-# -----------------------------
 
+# ┌---------------------------┐
+# | Create problem components |
+# └---------------------------┘
 integral = Integral('i', order=approx_order * 2)
 domain = FEDomain(domain_name, mesh)
 omega = domain.create_region('Omega', 'all')
@@ -98,6 +107,10 @@ field = DGField('dgfu', nm.float64, 'scalar', omega,
 u = DGFieldVariable('u', 'unknown', field, history=1)
 v = DGFieldVariable('v', 'test', field, primary_var_name='u')
 
+
+# ┌----------------------------┐
+# |   Define advection terms   |
+# └----------------------------┘
 MassT = DotProductVolumeTerm("adv_vol(v, u)", "v, u", integral, omega, u=u, v=v)
 
 a = Material('a', val=[velo])
@@ -108,81 +121,109 @@ alpha = Material('alpha', val=[.0])
 FluxT = AdvectDGFluxTerm("adv_lf_flux(a.val, v, u)", "a.val, v,  u[-1]",
                          integral, omega, u=u, v=v, a=a, alpha=alpha)
 
+
+# ┌----------------------------┐
+# |   Define Diffusion terms   |
+# └----------------------------┘
 diffusion_tensor = 0.02  # nm.array([[.002, 0],
 #           [0, .002]]).T
 D = Material('D', val=[diffusion_tensor])
+Cw = Material("Cw", values={".val": 10})
+
 DivGrad = LaplaceTerm("diff_lap(D.val, v, u)", "D.val, v, u[-1]",
                       integral, omega, u=u, v=v, D=D)
 
 DiffFluxT = DiffusionDGFluxTerm("diff_lf_flux(D.val, v, u)", "D.val, v,  u[-1]",
                                 integral, omega, u=u, v=v, D=D)
-Cw = Material("Cw", values={".val": 10})
 DiffPen = DiffusionInteriorPenaltyTerm("diff_pen(Cw.val, v, u)", "Cw.val, v, u[-1]",
                                        integral, omega, u=u, v=v, Cw=Cw)
 
-eq = Equation('balance', MassT
-              + StiffT - FluxT
-              - (+ DivGrad - DiffFluxT)
-              - diffusion_tensor * DiffPen
+
+# ┌----------------------------┐
+# |    Define source term      |
+# └----------------------------┘
+@Functionize
+def source_fun(ts, coors, mode="qp", **kwargs):
+    # t = ts.dt * ts.step
+    x_1 = coors[..., 0]
+    x_2 = coors[..., 1]
+    sin = nm.sin
+    cos = nm.cos
+    exp = nm.exp
+    sqrt = nm.sqrt
+    if mode == "qp":
+        eps = diffusion_tensor
+        res = (-1024 * eps * (8 * (4 * (2 * x_1 - 1) ** 2 + 
+                                   4 * (2 * x_2 - 1) ** 2 - 1) * (2 * x_1 - 1) ** 2 /
+                              (((4 * (2 * x_1 - 1) ** 2 + 4 * (2 * x_2 - 1) ** 2 - 1) ** 2 / eps + 256) ** 2 * eps ** (3 / 2))
+                              + 8 * (4 * (2 * x_1 - 1) ** 2 + 
+                                     4 * (2 * x_2 - 1) ** 2 - 1) * (2 * x_2 - 1) ** 2 /
+                              (((4 * (2 * x_1 - 1) ** 2 + 4 * (2 * x_2 - 1) ** 2 - 1) ** 2 / eps + 256) ** 2 * eps ** (3 / 2))
+                              - 1 / (((4 * (2 * x_1 - 1) ** 2 + 4 * (2 * x_2 - 1) ** 2 - 1) ** 2 / eps + 256) * sqrt(eps)))
+               - 256 * (2 * x_1 - 1) / (((4 * (2 * x_1 - 1) ** 2 + 4 * (2 * x_2 - 1) ** 2 - 1) ** 2 / eps + 256) * sqrt(eps)) 
+               - 256 * (2 * x_2 - 1) / (((4 * (2 * x_1 - 1) ** 2 + 4 * (2 * x_2 - 1) ** 2 - 1) ** 2 / eps + 256) * sqrt(eps))
+               )
+        return {"val": res[..., None, None]}
+
+
+g = Material('g', function=source_fun)
+SourceTerm = LinearVolumeForceTerm("source_g(g.val, v)", "g.val, v", integral, omega, v=v, g=g)
+
+# ┌----------------------------┐
+# |===== Create equation ======|
+# └----------------------------┘
+eq = Equation('balance',
+              (DivGrad - StiffT)
+              - DiffFluxT
+              + (diffusion_tensor * DiffPen + FluxT)
+              +  SourceTerm
               )
 eqs = Equations([eq])
 
-# ------------------------------
-# | Create bounrady conditions |
-# ------------------------------
-dirichlet_bc_u = DGEssentialBC('left_fix_u', left, {'u.all': 1.0})
-periodic1_bc_u = DGPeriodicBC('top_bot', [top, bottom], {'u.all': 'u.all'}, match='match_x_line')
-periodic2_bc_u = DGPeriodicBC('left_right', [left, right], {'u.all': 'u.all'}, match='match_y_line')
-
-
+# ┌----------------------------┐
+# | Create boundary conditions |
+# └----------------------------┘
 # right_fix_u = EssentialBC('right_fix_u', right, {'u.all' : 0.0})
 
 
-# ----------------------------
+# ┌--------------------------┐
 # | Create initial condition |
-# ----------------------------
-def ic_wrap(x, ic=None):
+# └--------------------------┘
+@Functionize
+def ic_fun(x, ic=None):
     return gsmooth(x[..., 0:1] - .3) * gsmooth(x[..., 1:] - .3)
 
 
-ic_fun = Function('ic_fun', ic_wrap)
 ics = InitialCondition('ic', omega, {'u.0': ic_fun})
 
-# ------------------
+# ┌----------------┐
 # | Create problem |
-# ------------------
+# └----------------┘
 pb = Problem(problem_name, equations=eqs, conf=Struct(options={"save_times": save_timestn}, ics={},
                                                       ebcs={}, epbcs={}, lcbcs={}, materials={},
                                                       ),
              active_only=False)
 pb.setup_output(output_dir=output_folder, output_format=output_format)
-pb.functions = {'match_x_line': Function("match_x_line", match_x_line),
-                'match_y_line': Function("match_y_line", match_y_line)}
 pb.set_ics(Conditions([ics]))
-pb.set_bcs(  # ebcs=Conditions([dirichlet_bc_u]),
-        epbcs=Conditions([periodic1_bc_u,
-                          # periodic2_bc_u
-                          ]))
+pb.set_bcs(ebcs=Conditions([
+    # dirichlet_bc_u
+]))
 
-# ------------------
-# | Create limiter |
-# ------------------
+# ┌----------------┐
+# | Choose limiter |
+# └----------------┘
 limiter = IdentityLimiter
 
-# ---------------------------
-# | Set time discretization |
-# ---------------------------
+
 max_velo = nm.max(nm.linalg.norm(velo))
-t0 = 0
-t1 = 1
 dx = nm.min(mesh.cmesh.get_volumes(2))
 dt = dx / max_velo * CFL / (2 * approx_order + 1)
 tn = int(nm.ceil((t1 - t0) / dt))
 dtdx = dt / dx
 
-# ------------------
+# ┌---------------┐
 # | Create solver |
-# ------------------
+# └---------------┘
 ls = ScipyDirect({})
 nls_status = IndexedStruct()
 nls = Newton({'is_linear': True}, lin_solver=ls, status=nls_status)
@@ -195,9 +236,9 @@ tss_conf = {'t0'     : t0,
 tss = EulerStepSolver(tss_conf,
                       nls=nls, context=pb, verbose=True)
 
-# ---------
+# ┌-------┐
 # | Solve |
-# ---------
+# └-------┘
 print("Solving equation \n\n\t\t u_t - div(au)) = 0\n")
 print("With IC: {}".format(ic_fun.name))
 # print("and EBCs: {}".format(pb.ebcs.names))

@@ -155,6 +155,7 @@ class DGField(Field):
         self.clear_facet_neighbour_idx_cache()
         self.clear_normals_cache()
         self.clear_facet_vols_cache()
+        self.boundary_facet_local_idx = {}
 
     def _setup_all_dofs(self):
         """
@@ -366,8 +367,8 @@ class DGField(Field):
 
     def get_facet_qp(self):
         """
-        Returns dim - 1 quadrature points on all facets of the reference element in array of shape
-        (n_qp, n_el_facets, dim)
+        Returns quadrature points on all facets of the reference element in array of shape
+        (n_qp, 1 , n_el_facets, dim)
         :return: qp, weights - need to be transformed to actual facets!
         """
 
@@ -447,7 +448,7 @@ class DGField(Field):
         plugs correct neighbours for cell on periodic boundary. Where there are no neighbours
         specified puts -1.
 
-        Cashes neighbour index in self.facet_neighbours!
+        Cashes neighbour index in self.facet_neighbours
 
         :param region:
         :param eq_map: eq_map from state variable containing information on EPBC
@@ -487,7 +488,7 @@ class DGField(Field):
                         nbrs.append(fis[of1])
             facet_neighbours[ic, :, :] = nbrs
 
-        # treat EPBCs
+        # treat classical FEM EPBCs - we need to correct neighbours
         if eq_map.n_epbc > 0:
             # set neighbours of periodic cells to one another
             mcells = nm.unique(self.dofs2cells[eq_map.master])
@@ -507,7 +508,17 @@ class DGField(Field):
             facet_neighbours[
                 scells, scells_facets, 1] = mcells_facets  # set neighbour facets to facets of mcell missing neighbour
 
-        # cache results
+        # treat DG EPBC - these are definetly prefered
+        for master_bc2bfi, slave_bc2bfi in eq_map.dg_epbc:
+            # set neighbours of periodic cells to one another
+            facet_neighbours[master_bc2bfi[:, 0], master_bc2bfi[:, 1], 0] = slave_bc2bfi[:, 0]
+            facet_neighbours[slave_bc2bfi[:, 0], slave_bc2bfi[:, 1], 0] = master_bc2bfi[:, 0]
+
+            # set neigbours facets
+            facet_neighbours[slave_bc2bfi[:, 0], slave_bc2bfi[:, 1], 1] = master_bc2bfi[:, 1]
+            facet_neighbours[master_bc2bfi[:, 0], master_bc2bfi[:, 1], 1] = slave_bc2bfi[:, 1]
+
+            # cache results
         self.facet_neighbour_index[region.name] = facet_neighbours
 
         return facet_neighbours
@@ -539,7 +550,6 @@ class DGField(Field):
                                         outer facet values (n_cell, n_el_facets, dim, n_qp)
 
         """
-
         if derivative:
             diff = int(derivative)
         else:
@@ -571,21 +581,22 @@ class DGField(Field):
                                                             dofs[per_facet_neighbours[:, facet_n, 0]],
                                                             outer_base_vals[:, :, facet_n])
 
-        if state.eq_map.n_ebc > 0:
-            # get cells with missing neighbours, ignore that we do not know neighbour local facet idx
-            boundary_cells = nm.array(nm.where(per_facet_neighbours[:, :, 0] < 0)).T
-            ebc_cells = self.dofs2cells[state.eq_map.eq_ebc][::self.n_el_nod]
+        boundary_cells = nm.array(nm.where(per_facet_neighbours[:, :, 0] < 0)).T
+        outer_facet_vals[boundary_cells[:, 0], boundary_cells[:, 1]] = 0.0
+        # TODO detect and print boundary cells without defined BCs
+        for ebc, ebc_vals in zip(state.eq_map.dg_ebc.get(diff, []), state.eq_map.dg_ebc_val.get(diff, [])):
+            if unreduce_nod:
+                raise NotImplementedError("Unreduced DOFs are not available for boundary outer facets")
+                outer_facet_vals[ebc[:, 0], ebc[:, 1], :] = nm.einsum("id,id...->id...",
+                                                                      ebc_vals,
+                                                                      inner_base_vals[0, :, ebc[:, 1]])
 
-            for ebc_ii, ebc_cell in enumerate(ebc_cells):
-                curr_b_cells = boundary_cells[boundary_cells[:, 0] == ebc_cell]
-                for bn_facet in curr_b_cells[:, 1]:
-                    outer_facet_vals[ebc_cell, bn_facet, :] = nm.einsum("d,d...->...",
-                                                                        state.eq_map.val_ebc[self.n_el_nod * ebc_ii:
-                                                                                             self.n_el_nod * (
-                                                                                                         ebc_ii + 1)],
-                                                                        inner_base_vals[0, :, bn_facet])
+            else:
+                # FIXME contains quick fix flipping qp order to accomodate for opposite facet orientation of neighbours
+                # this is partially taken care of in get_both_facet_base_vals, but needs to be repeated here
+                outer_facet_vals[ebc[:, 0], ebc[:, 1], :] = ebc_vals[:, ::-1]
 
-        # FIXME flip outer_facet_vals moved to get_both_facet_base_vals
+        # flip outer_facet_vals moved to get_both_facet_base_vals
         return inner_facet_vals, outer_facet_vals, whs
 
     def get_both_facet_base_vals(self, state, region, derivative=None):
@@ -627,6 +638,7 @@ class DGField(Field):
         else:
             outer_facet_base_vals[:] = inner_facet_base_vals[0, :, per_facet_neighbours[:, :, 1]].swapaxes(-2, -3)
 
+        # FIXME quick fix to flip facet QPs for right integration order
         return inner_facet_base_vals, outer_facet_base_vals[..., ::-1], whs
 
     def clear_normals_cache(self, region=None):
@@ -681,7 +693,7 @@ class DGField(Field):
     def get_facet_vols(self, region):
         """
 
-        Caches results, use clear_facet_vols_cache to clear the cach
+        Caches results, use clear_facet_vols_cache to clear the cache
 
         :param region:
         :return: volumes of the facets by cells shape is (n_cell, n_el_facets, 1)
@@ -782,8 +794,7 @@ class DGField(Field):
         """
         Return indices of DOFs that belong to the given region and group.
 
-        NOT really tested, called only with the region being the "main" region
-        of the problem, i.e. self.region
+        Not Used in BC treatment
 
         :param region:
         :param merge: merge dof tuple into one numpy array
@@ -791,8 +802,7 @@ class DGField(Field):
         """
 
         dofs = []
-        eldofs = nm.empty((0,), dtype=nm.int32)
-        if region.has_cells():
+        if region.has_cells():  # main region or its part
             els = nm.ravel(self.bubble_remap[region.cells])
             eldofs = self.bubble_dofs[els[els >= 0]]
             dofs.append(eldofs)
@@ -808,6 +818,23 @@ class DGField(Field):
             dofs = nm.concatenate(dofs)
 
         return dofs
+
+    def get_facet_boundary_index(self, region):
+        """
+
+        Caches results in self.boundary_facet_local_idx
+
+        :param region: surface region defining BCs
+        :return: index of cells on boundary along with corresponding facets
+        """
+
+        if region.name in self.boundary_facet_local_idx:
+            return self.boundary_facet_local_idx[region.name]
+
+        bc2bfi = region.get_facet_indices()
+        self.boundary_facet_local_idx[region.name] = bc2bfi
+
+        return bc2bfi
 
     def create_mapping(self, region, integral, integration, return_mapping=True):
         """
@@ -953,14 +980,16 @@ class DGField(Field):
 
     def set_facet_dofs(self, fun, region, dpn, warn):
         """
-        Compute projection of fun onto the basis, in main region, alternatively
+        Compute projection of fun onto the basis on facets, alternatively
         set DOFs directly to provided value or values
-        :param fun: callable, scallar or array corresponding to dofs
+        :param fun: callable, scalar or array corresponding to dofs
         :param region: region to set DOFs on
         :param dpn: number of dofs per element
         :param warn: not used
         :return: nods, vals
         """
+        raise NotImplementedError("Setting facet DOFs is not supported with DGField, "+
+                                  "use values at qp directly")
 
         aux = self.get_dofs_in_region(region)
         nods = nm.unique(nm.hstack(aux))
@@ -979,15 +1008,82 @@ class DGField(Field):
             vals = nm.zeros(aux.shape)
             # set zero DOF to value fun, set other DOFs to zero
             # FIXME only temporary to test BCs
-            vals[:, 0] = fun(1)
-
             # get facets QPs
-            # get facets weights
-            # get facet basis vals
+            qp, weights = self.get_facet_qp()
+            weights = weights[0, :, 0]
+            qp = qp[:, 0, :, :]
+            # get facets weights ?
+
+
             # get coors
+            bc2bfi = self.get_facet_boundary_index(region)
+            coors = self.mapping.get_physical_qps(qp)
+
+            # get_physical_qps returns data in strange format, swapping some axis and flipping qps order
+            bcoors = coors[bc2bfi[:, 1], ::-1, bc2bfi[:, 0], :]
+
+            # get facet basis vals
+            base_vals_qp = self.poly_space.eval_base(qp)[:, 0, 0, :]
+
             # solve for boundary cell DOFs
+            bc_val = fun(bcoors)
+            # # TODO this returns singular matrix - drop dofs that are not needed on facet?
+            # # or use nodal values approach?
+            # lhs = nm.einsum("q,qd,qc->dc", weights, base_vals_qp, base_vals_qp)
+            # inv_lhs = nm.linalg.inv(lhs)
+            # rhs_vec = nm.einsum("q,q...,iq...->i...", weights, base_vals_qp, bc_val)
 
         return nods, vals
+
+    def get_qp_values(self, fun, region, ret_coors=False, diff=0):
+        """
+        Output is used in
+
+        :param fun: Function value or values to set qps values to
+        :param region: boundary region
+        :param ret_coors: dafault False, return physical coors of qps
+        :return: vals.shape == (n_cell,) + (self.dim,) * diff + (n_qp,)
+        """
+        if region.has_cells():
+            raise NotImplementedError("We do not need values of function in main regions qps")
+
+        # get facets QPs
+        qp, weights = self.get_facet_qp()
+        weights = weights[0, :, 0]
+        qp = qp[:, 0, :, :]
+        n_qp = qp.shape[0]
+        # get facets weights ?
+
+        # get physical coors
+        bc2bfi = self.get_facet_boundary_index(region)
+        n_cell = bc2bfi.shape[0]
+        coors = self.mapping.get_physical_qps(qp)
+
+        # get_physical_qps returns data in strange format,
+        # swapping some axis and flipping qps order
+        # to get qps only in current region
+        bcoors = coors[bc2bfi[:, 1], ::-1, bc2bfi[:, 0], :]
+        output_shape = (n_cell,) + (self.dim,) * diff + (n_qp,)
+        vals = nm.zeros(output_shape)  # we do not need last axis of coors, values are scalars
+
+        if nm.isscalar(fun):
+            vals[:] = fun
+
+        elif isinstance(fun, nm.ndarray):
+            if nm.shape(fun) == nm.shape(vals):
+                vals[:] = fun
+            else:
+                raise ValueError("Shape of provided values {} does not match shape {} of qps in region {}".format(
+                    fun.shape, vals.shape, region.name
+                ))
+
+        elif callable(fun):
+            # get boundary values
+            vals[:] = fun(bcoors)
+
+        if ret_coors:
+            return bcoors, vals
+        return vals
 
     def get_nodal_values(self, dofs, region, ref_nodes=None):
         """
