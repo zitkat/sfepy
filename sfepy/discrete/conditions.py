@@ -29,6 +29,8 @@ def get_condition_value(val, functions, kind, name):
     elif (isinstance(val, Function) or nm.isscalar(val)
           or isinstance(val, nm.ndarray)):
         fun = val
+    elif isinstance(val, tuple):
+        fun = nm.array(val)
 
     else:
         raise ValueError('unknown value type for %s %s!'
@@ -55,7 +57,16 @@ class Conditions(Container):
         for key, cc in six.iteritems(conf):
             times = cc.get('times', None)
 
-            if 'ebc' in key:
+            if 'dgebc' in key:
+                region = _get_region(cc.region, regions, cc.name)
+                cond = DGEssentialBC(cc.name, region, cc.dofs, key=key,
+                                   times=times)
+            elif 'dgepbc' in key:
+                rs = [_get_region(ii, regions, cc.name) for ii in cc.region]
+                cond = DGPeriodicBC(cc.name, rs, cc.dofs, cc.match, key=key,
+                                  times=times)
+
+            elif 'ebc' in key:
                 region = _get_region(cc.region, regions, cc.name)
                 cond = EssentialBC(cc.name, region, cc.dofs, key=key,
                                    times=times)
@@ -177,6 +188,12 @@ class Condition(Struct):
         for dofs, val in six.iteritems(self.dofs):
             single_cond = self.copy(name=self.name)
             single_cond.is_single = True
+            if 'grad' in dofs:
+                # extract variable name from grad dofs
+                dofs = ".".join((dofs.split(".")[0][-1],  dofs.split(".")[1]))
+                # mark condition as diff
+                single_cond.diff = 1
+
             single_cond.dofs = [dofs, val]
             yield single_cond
 

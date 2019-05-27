@@ -7,7 +7,7 @@ import numpy as nm
 
 from sfepy.base.base import (
     dict_from_keys_init, select_by_names, is_string, is_integer, is_sequence,
-    output, get_default, Struct, IndexedStruct)
+    output, get_default, get_default_attr, Struct, IndexedStruct)
 import sfepy.base.ioutils as io
 from sfepy.base.conf import ProblemConf, get_standard_keywords
 from sfepy.base.conf import transform_variables, transform_materials
@@ -643,12 +643,18 @@ class Problem(Struct):
             conf_ebc = get_default(ebcs, self.conf.ebcs)
             self.ebcs = Conditions.from_conf(conf_ebc, self.domain.regions)
 
+            conf_dgebc = get_default_attr(self.conf, "dgebcs", {})
+            self.ebcs.extend(Conditions.from_conf(conf_dgebc, self.domain.regions))
+
         if isinstance(epbcs, Conditions):
             self.epbcs = epbcs
 
         else:
             conf_epbc = get_default(epbcs, self.conf.epbcs)
             self.epbcs = Conditions.from_conf(conf_epbc, self.domain.regions)
+
+            conf_dgepbc = get_default_attr(self.conf, "dgepbcs", {})
+            self.ebcs.extend(Conditions.from_conf(conf_dgepbc, self.domain.regions))
 
         if isinstance(lcbcs, Conditions):
             self.lcbcs = lcbcs
