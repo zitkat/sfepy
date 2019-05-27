@@ -9,9 +9,7 @@ import scipy.sparse as sp
 
 from sfepy.base.base import assert_, Struct, basestr, output
 from sfepy.discrete.functions import Function
-from sfepy.discrete.conditions import get_condition_value, EssentialBC, PeriodicBC
-
-from sfepy.discrete.dg.dg_conditions import DGPeriodicBC, DGEssentialBC
+from sfepy.discrete.conditions import get_condition_value, EssentialBC, PeriodicBC, DGPeriodicBC, DGEssentialBC
 
 
 def expand_nodes_to_dofs(nods, n_dof_per_node):

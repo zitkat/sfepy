@@ -18,11 +18,12 @@ from sfepy.base.parse_conf import create_bnf
 import six
 
 _required = ['filename_mesh|filename_domain', 'field_[0-9]+|fields',
-             'ebc_[0-9]+|ebcs', 'equations',
+             'ebc_[0-9]+|ebcs', 'dgebc_[0-9]+|dgebcs', 'equations',
              'region_[0-9]+|regions', 'variable_[0-9]+|variables',
              'material_[0-9]+|materials',
              'solver_[0-9]+|solvers']
-_other = ['epbc_[0-9]+|epbcs', 'lcbc_[0-9]+|lcbcs', 'nbc_[0-9]+|nbcs',
+_other = ['epbc_[0-9]+|epbcs', 'dgepbc_[0-9]+|dgepbcs',
+          'lcbc_[0-9]+|lcbcs', 'nbc_[0-9]+|nbcs',
           'ic_[0-9]+|ics', 'function_[0-9]+|functions', 'options',
           'integral_[0-9]+|integrals']
 
@@ -66,6 +67,7 @@ def transform_variables(adict):
             d2['variable_'+c2.name] = c2
     return d2
 
+
 def transform_conditions(adict, prefix):
     d2 = {}
     for ii, (key, conf) in enumerate(six.iteritems(adict)):
@@ -83,6 +85,13 @@ def transform_conditions(adict, prefix):
             d2['%s_%s' % (prefix, c2.name)] = c2
 
     return d2
+
+def create_transform_ebcs(prefix):
+    # FIXME - this is only to get the right prefix - dgebc_..., refactor
+
+    def ebcs_tranformer(adict):
+        return transform_conditions(adict, prefix)
+    return ebcs_tranformer
 
 def transform_ebcs(adict):
     return transform_conditions(adict, 'ebc')
@@ -136,6 +145,27 @@ def transform_epbcs(adict):
             c2 = transform_to_struct_1(conf)
             d2['epbc_%s' % c2.name] = c2
     return d2
+
+def create_transform_epbcs(prefix):
+    # TODO this is only to get correct prefix, refactor
+    def epbcs_transformer(adict):
+        d2 = {}
+        for ii, (key, conf) in enumerate(six.iteritems(adict)):
+            if isinstance(conf, tuple):
+                if len(conf) == 3:
+                    c2 = tuple_to_conf(key, conf, ['region', 'dofs', 'match'])
+
+                else:
+                    c2 = tuple_to_conf(key, conf,
+                                       ['region', 'times', 'dofs', 'match'])
+
+                d2['%s_%s__%d' % (prefix, c2.name, ii)] = c2
+            else:
+                c2 = transform_to_struct_1(conf)
+                d2['%s_%s' % (prefix, c2.name)] = c2
+        return d2
+    return epbcs_transformer
+
 
 def transform_regions(adict):
     d2 = {}
@@ -258,6 +288,8 @@ transforms = {
     'variables' : transform_variables,
     'ebcs'      : transform_ebcs,
     'epbcs'     : transform_epbcs,
+    'dgebcs'    : create_transform_ebcs("dgebcs"),
+    'dgepbcs'   : create_transform_epbcs("dgebcs"),
     'nbcs'      : transform_to_struct_01,
     'lcbcs'     : transform_lcbcs,
     'ics'       : transform_ics,
