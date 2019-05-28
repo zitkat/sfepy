@@ -189,8 +189,8 @@ class Condition(Struct):
             single_cond = self.copy(name=self.name)
             single_cond.is_single = True
             if 'grad' in dofs:
-                # extract variable name from grad dofs
-                dofs = ".".join((dofs.split(".")[0][-1],  dofs.split(".")[1]))
+                # extract variable name from grad.<var-name>.all dofs
+                dofs = ".".join((dofs.split(".")[1:]))
                 # mark condition as diff
                 single_cond.diff = 1
 
