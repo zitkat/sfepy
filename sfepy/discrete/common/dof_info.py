@@ -372,7 +372,7 @@ class EquationMap(Struct):
                 ntype = 'EPBC'
                 region = bc.regions[0]
 
-            output("Treating {} {}".format(ntype, bc.name))
+            # output("Treating {} {}".format(ntype, bc.name))
 
 
             if warn:
@@ -413,8 +413,7 @@ class EquationMap(Struct):
                     fun = lambda coors: aux(ts, coors,
                                             bc=bc, problem=problem)
 
-                # nods, vv = field.set_dofs(fun, region, len(dofs), clean_msg)
-                values = field.get_qp_values(fun, region, diff=bc.diff)
+                values = field.get_bc_facet_values(fun, region, diff=bc.diff)
                 bc2bfi = field.get_facet_boundary_index(region)
 
                 self.dg_ebc_val.setdefault(bc.diff, []).append(values)
