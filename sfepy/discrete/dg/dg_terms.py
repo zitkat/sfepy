@@ -92,144 +92,20 @@ class AdvectDGFluxTerm(Term):
         fc_n = field.get_cell_normals_per_facet(region)
         facet_base_vals = field.get_facet_base(base_only=True)
         in_fc_v, out_fc_v, weights = field.get_both_facet_state_vals(state, region)
-
-        C = nm.abs(nm.einsum("ifk,ik->if", fc_n, advelo))
-        fc_v_p = in_fc_v + out_fc_v
-        fc_v_m = in_fc_v - out_fc_v
         # get sane facet base shape
         fc_b = facet_base_vals[:, 0, :, 0, :].T  # (n_el_nod, n_el_facet, n_qp)
-        central = nm.einsum("ik,ifq->ifkq", advelo, fc_v_p) / 2
-        upwind = (1 - self.alf) / 2. * nm.einsum("if,ifk,ifq->ifkq", C, fc_n, fc_v_m)
+
+        # get maximal wave speeds at facets
+        C = nm.abs(nm.einsum("ifk,ik->if", fc_n, advelo))
+
+        fc_v_avg = (in_fc_v + out_fc_v)/2
+        fc_v_jmp = in_fc_v - out_fc_v
+
+        central = nm.einsum("ik,ifq->ifkq", advelo, fc_v_avg)
+        upwind = (1 - self.alf) / 2. * nm.einsum("if,ifk,ifq->ifkq", C, fc_n, fc_v_jmp)
+
         cell_fluxes = nm.einsum("ifk,ifkq,dfq,ifq->id", fc_n, central + upwind, fc_b, weights)
 
-        # cell_fluxes = nm.sum(facet_fluxes, axis=1)
-
-        # 1D plots
-        if False:
-            dofs = self.dofs
-            # TODO remove 1D plots
-            from my_utils.visualizer import plot_1D_legendre_dofs, reconstruct_legendre_dofs
-            import matplotlib.pyplot as plt
-            x = self.region.domain.mesh.coors
-            plot_1D_legendre_dofs(x, (dofs,))
-            ww, xx = reconstruct_legendre_dofs(x, 1, dofs.T[0, ..., None, None])
-            plt.plot(xx, ww[:, 0], label="recon")
-
-            # plt.figure("Vals outer")
-            # plt.plot(x[:-1], out_fc_v[:, 0], marker=".", label="left outer", color="b",  ls="")
-            # plt.plot(x[1:], out_fc_v[:, 1], marker=".",  label="right outer", color="r",  ls="")
-            # plt.plot(xx, ww[:, 0], label="recon")
-            # plt.legend()
-            #
-            # # Plot mesh
-            # XN = x[-1]
-            # X1 = x[0]
-            # Xvol = XN - X1
-            # X = (x[1:] + x[:-1]) / 2
-            # plt.vlines(x[:, 0], ymin=0, ymax=.5, colors="grey")
-            # plt.vlines((X1, XN), ymin=0, ymax=.5, colors="k")
-            # plt.vlines(X, ymin=0, ymax=.3, colors="grey", linestyles="--")
-            #
-            # plt.figure("Vals inner")
-            # plt.plot(xx, ww[:, 0], label="recon")
-            # plt.plot(x[:-1], in_fc_v[:, 0], marker=".", label="left in", color="b", ls="")
-            # plt.plot(x[1:], in_fc_v[:, 1], marker=".", label="right in", color="r", ls="")
-            # plt.legend()
-            #
-            # # Plot mesh
-            # XN = x[-1]
-            # X1 = x[0]
-            # Xvol = XN - X1
-            # X = (x[1:] + x[:-1]) / 2
-            # plt.vlines(x[:, 0], ymin=0, ymax=.5, colors="grey")
-            # plt.vlines((X1, XN), ymin=0, ymax=.5, colors="k")
-            # plt.vlines(X, ymin=0, ymax=.3, colors="grey", linestyles="--")
-            # plt.legend()
-
-            for mode_n in range(n_el_nod):
-                plt.figure("Flux {}".format(mode_n))
-                fig = plt.gcf()
-                fig.clear()
-                plt.plot(xx, ww[:, 0], label="recon")
-                plt.plot(xx, ww[:, 0], label="recon")
-                plt.plot(x[:-1], facet_fluxes[:, 0, mode_n], marker=">", label="flux {} left".format(mode_n), color="b",
-                         ls="")
-                plt.plot(x[1:], facet_fluxes[:, 1, mode_n], marker=">", label="flux {} right".format(mode_n), color="r",
-                         ls="")
-
-                # Plot mesh
-                XN = x[-1]
-                X1 = x[0]
-                Xvol = XN - X1
-                X = (x[1:] + x[:-1]) / 2
-                plt.vlines(x[:, 0], ymin=0, ymax=.5, colors="grey")
-                plt.vlines((X1, XN), ymin=0, ymax=.5, colors="k")
-                plt.vlines(X, ymin=0, ymax=.3, colors="grey", linestyles="--")
-                plt.legend()
-
-            # plt.show()
-
-            for mode_n in range(n_el_nod):
-                plt.figure("Flux {}".format(mode_n))
-                fig = plt.gcf()
-                fig.clear()
-                plt.plot(xx, ww[:, 0], label="recon")
-                plt.plot(xx, ww[:, 0], label="recon")
-                plt.plot(X, cell_fluxes[:, mode_n], marker="D", label="cell flux {}".format(mode_n), color="r", ls="")
-
-                # Plot mesh
-                XN = x[-1]
-                X1 = x[0]
-                Xvol = XN - X1
-                X = (x[1:] + x[:-1]) / 2
-                plt.vlines(x[:, 0], ymin=0, ymax=.5, colors="grey")
-                plt.vlines((X1, XN), ymin=0, ymax=.5, colors="k")
-                plt.vlines(X, ymin=0, ymax=.3, colors="grey", linestyles="--")
-                plt.legend()
-                plt.close('all')
-
-        # 2D plots
-        if False:
-            # TODO remove 2D plots
-            import matplotlib.pyplot as plt
-            import sfepy.postprocess.plot_cmesh as pc
-
-            cmesh = self.region.domain.mesh.cmesh
-
-            def plot_facet_normals(ax, cmesh, normals, scale, col='m'):
-                dim = cmesh.dim
-                ax = pc._get_axes(ax, dim)
-
-                edim = dim - 1
-                coors = cmesh.get_centroids(edim)
-                coors = pc._to2d(coors)
-
-                cmesh.setup_connectivity(dim, edim)
-                c2f = cmesh.get_conn(dim, edim)
-                for ic, o1 in enumerate(c2f.offsets[:-1]):
-                    o2 = c2f.offsets[ic + 1]
-                    for ifal, ifa in enumerate(c2f.indices[o1:o2]):
-                        # print(ic, ifal, ifa)
-                        cc = nm.array([coors[ifa], coors[ifa] + scale * normals[ic, ifal]])
-                        # print(cc)
-                        ax.plot(*cc.T, color=col)
-                        # ax.plot([cc[1, 0]], [cc[1, 1]], color=col, marker=">")
-
-                return ax
-
-            ax = pc.plot_cmesh(
-                    None, cmesh,
-                    wireframe_opts={'color': 'k', 'linewidth': 2},
-                    entities_opts=[
-                        {'color': 'k', 'label_global': 12, 'label_local': 8, 'size': 20},  # vertices
-                        {'color': 'b', 'label_global': 6, 'label_local': 8, 'size': 10},  # faces
-                        {'color': 'r', 'label_global': 12, 'size': 1},  # cells
-                    ])
-            # for i in range(n_el_nod):
-            #     ax = plot_facet_normals(ax, cmesh, facet_fluxes[:, :, i, None] * fc_n, 1, col='r')
-
-            ax = plot_facet_normals(ax, cmesh, fc_n, .01, col='m')
-            plt.show()
 
         out[:] = 0.0
         n_el_nod = field.n_el_nod
@@ -450,10 +326,8 @@ class NonlinearHyperDGFluxTerm(Term):
 
     def get_fargs(self, alpha, fun, dfun, test, state,
                   mode=None, term_mode=None, diff_var=None, **kwargs):
-        # FIXME - just  to get it working, remove code duplicity!
 
         if alpha is not None:
-            # FIXME this is only hotfix to get scalar!
             self.alf = nm.max(alpha)  # extract alpha value regardless of shape
 
         self.fun = fun
@@ -493,7 +367,7 @@ class NonlinearHyperDGFluxTerm(Term):
         df_in = df(in_fc_v)
         df_out = df(out_fc_v)
         fc_n__dot__df_in = nm.einsum("ifk,ifqk->ifq", fc_n, df_in)
-        fc_n__dot__df_out = nm.einsum("ifk,ifqk->ifq", fc_n, df_out)  # TODO
+        fc_n__dot__df_out = nm.einsum("ifk,ifqk->ifq", fc_n, df_out)
         dfdn = nm.stack((fc_n__dot__df_in, fc_n__dot__df_out), axis=-1)
         C = nm.amax(nm.abs(dfdn), axis=(-2, -1))
 
@@ -502,6 +376,7 @@ class NonlinearHyperDGFluxTerm(Term):
 
         central = fc_f_avg
         upwind = (1 - self.alf) / 2. * nm.einsum("if,ifk,ifq->ifqk", C, fc_n, fc_v_jmp)
+
         cell_fluxes = nm.einsum("ifk,ifqk,dfq,ifq->id", fc_n, central + upwind, fc_b, weights)
 
         out[:] = 0.0
@@ -547,18 +422,6 @@ class NonlinScalarDotGradTerm(Term):
                    'state/grad_virtual'  : 1}]
     modes = ('grad_state', 'grad_virtual')
 
-    # def __init__(self, integral, region, f=None, df=None, **kwargs):
-    #     ScalarDotMGradScalarTerm.__init__(self, self.name + "(v, u)", "u[-1], v", integral, region, **kwargs)
-    #     # TODO how to pass f and df as Term arguments i.e. from conf examples?
-    #     if f is not None:
-    #         self.fun = f
-    #     else:
-    #         raise ValueError("Function f not provided to {}!".format(self.name))
-    #     if df is not None:
-    #         self.dfun = df
-    #     else:
-    #         raise ValueError("Derivative of function {} no provided to {}".format(self.fun, self.name))
-
     @staticmethod
     def function(out, out_qp, geo, fmode):
         status = geo.integrate(out, out_qp)
@@ -571,7 +434,7 @@ class NonlinScalarDotGradTerm(Term):
 
         if diff_var is None:
             if self.mode == 'grad_state':
-                # TODO chceck correct shapes for integration
+                # TODO check correct shapes for integration
                 geo = vg1
                 bf_t = vg1.bf.transpose((0, 1, 3, 2))
                 val_qp = dfun(self.get(var2, 'val')[..., 0])
@@ -580,7 +443,6 @@ class NonlinScalarDotGradTerm(Term):
                 out_qp = dot_sequences(bf_t, val_grad_qp, 'ATB')
 
             else:
-                # TODO chceck correct shapes for integration
                 geo = vg2
                 val_qp = fun(self.get(var1, 'val'))[..., 0, :].swapaxes(-2, -1)
                 out_qp = dot_sequences(vg2.bfg, val_qp, 'ATB')
