@@ -88,15 +88,26 @@ class AdvectDGFluxTerm(Term):
             facet_base_vals = field.get_facet_base(base_only=True)
             nbrhd_idx = field.get_facet_neighbor_idx(region, state.eq_map)
             in_fc_b, out_fc_b, whs = field.get_both_facet_base_vals(state, region)
-            per_facet_inner_flux = nm.einsum("nfk, ndfk->nd",
-                                             fc_n,
-                                             nm.einsum("nk, nbfq->nbfk", 1/2*advelo, in_fc_b) +
-                                             nm.einsum("nfk, nf, nbfq->nbfk", (1 - self.alpha)*fc_n, C/2, in_fc_b))
+            inner_flux = nm.einsum("nfk, nbfkq->nbfq",
+                                   fc_n,
+                                   nm.einsum("nk, nbfq->nbfkq", 1/2*advelo, in_fc_b) +
+                                   nm.einsum("nfk, nf, nbfq->nbfkq", (1 - self.alpha)*fc_n, C/2, in_fc_b))
 
-            per_facet_outer_flux = nm.einsum("nfk, nbfk->nd",
+            per_facet_outer_flux = nm.einsum("nfk, nbfkq->nbfq",
                                              fc_n,
-                                             nm.einsum("nk, nbfq->nbfk", 1/2*advelo, out_fc_b) +
-                                             nm.einsum("nfk, nf, nbfq->nbfk", -(1 - self.alpha)*fc_n, C/2, out_fc_b))
+                                             nm.einsum("nk, nbfq->nbfkq", 1/2*advelo, out_fc_b) +
+                                             nm.einsum("nfk, nf, nbfq->nbfkq", -(1 - self.alpha)*fc_n, C/2, out_fc_b))
+
+            active_cells, active_facets = nm.where(nbrhd_idx[:, :, 0] > 0)
+            active_nrbhs = nbrhd_idx[active_cells, active_facets, 0]
+            # TODO transform list of active cell connections to list of active DOFs
+            active = nm.stack((active_cells, active_nrbhs), axis=-1)
+
+            out_vals = nm.einsum('idq,ibq->idb', in_fc_b[active_nrbhs,:, active_facets, :], per_facet_outer_flux[active_nrbhs, :, active_facets])
+            in_vals = nm.einsum('ndfq,nbfq -> ndb', in_fc_b, inner_flux)
+            # iels =
+
+
 
 
             pass
