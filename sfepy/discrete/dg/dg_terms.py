@@ -104,17 +104,19 @@ class AdvectDGFluxTerm(Term):
             fc_n = field.get_cell_normals_per_facet(region)
             facet_base_vals = field.get_facet_base(base_only=True)
             in_fc_v, out_fc_v, weights = field.get_both_facet_state_vals(state, region)
-
-            C = nm.abs(nm.einsum("ifk,ik->if", fc_n, advelo))
-            fc_v_p = in_fc_v + out_fc_v
-            fc_v_m = in_fc_v - out_fc_v
             # get sane facet base shape
             fc_b = facet_base_vals[:, 0, :, 0, :].T  # (n_el_nod, n_el_facet, n_qp)
-            central = nm.einsum("ik,ifq->ifkq", advelo, fc_v_p) / 2
-            upwind = (1 - self.alpha) / 2. * nm.einsum("if,ifk,ifq->ifkq", C, fc_n, fc_v_m)
-            cell_fluxes = nm.einsum("ifk,ifkq,dfq,ifq->id", fc_n, central + upwind, fc_b, weights)
 
-            # cell_fluxes = nm.sum(facet_fluxes, axis=1)
+            # get maximal wave speeds at facets
+            C = nm.abs(nm.einsum("ifk,ik->if", fc_n, advelo))
+
+            fc_v_avg = (in_fc_v + out_fc_v)/2
+            fc_v_jmp = in_fc_v - out_fc_v
+
+            central = nm.einsum("ik,ifq->ifkq", advelo, fc_v_avg)
+            upwind = (1 - self.alpha) / 2. * nm.einsum("if,ifk,ifq->ifkq", C, fc_n, fc_v_jmp)
+
+            cell_fluxes = nm.einsum("ifk,ifkq,dfq,ifq->id", fc_n, central + upwind, fc_b, weights)
 
             out[:] = 0.0
             n_el_nod = field.n_el_nod
@@ -335,10 +337,8 @@ class NonlinearHyperDGFluxTerm(Term):
 
     def get_fargs(self, alpha, fun, dfun, test, state,
                   mode=None, term_mode=None, diff_var=None, **kwargs):
-        # FIXME - just  to get it working, remove code duplicity!
 
         if alpha is not None:
-            # FIXME this is only hotfix to get scalar!
             self.alf = nm.max(alpha)  # extract alpha value regardless of shape
 
         self.fun = fun
@@ -378,7 +378,7 @@ class NonlinearHyperDGFluxTerm(Term):
         df_in = df(in_fc_v)
         df_out = df(out_fc_v)
         fc_n__dot__df_in = nm.einsum("ifk,ifqk->ifq", fc_n, df_in)
-        fc_n__dot__df_out = nm.einsum("ifk,ifqk->ifq", fc_n, df_out)  # TODO
+        fc_n__dot__df_out = nm.einsum("ifk,ifqk->ifq", fc_n, df_out)
         dfdn = nm.stack((fc_n__dot__df_in, fc_n__dot__df_out), axis=-1)
         C = nm.amax(nm.abs(dfdn), axis=(-2, -1))
 
@@ -387,6 +387,7 @@ class NonlinearHyperDGFluxTerm(Term):
 
         central = fc_f_avg
         upwind = (1 - self.alf) / 2. * nm.einsum("if,ifk,ifq->ifqk", C, fc_n, fc_v_jmp)
+
         cell_fluxes = nm.einsum("ifk,ifqk,dfq,ifq->id", fc_n, central + upwind, fc_b, weights)
 
         out[:] = 0.0
@@ -432,18 +433,6 @@ class NonlinScalarDotGradTerm(Term):
                    'state/grad_virtual'  : 1}]
     modes = ('grad_state', 'grad_virtual')
 
-    # def __init__(self, integral, region, f=None, df=None, **kwargs):
-    #     ScalarDotMGradScalarTerm.__init__(self, self.name + "(v, u)", "u[-1], v", integral, region, **kwargs)
-    #     # TODO how to pass f and df as Term arguments i.e. from conf examples?
-    #     if f is not None:
-    #         self.fun = f
-    #     else:
-    #         raise ValueError("Function f not provided to {}!".format(self.name))
-    #     if df is not None:
-    #         self.dfun = df
-    #     else:
-    #         raise ValueError("Derivative of function {} no provided to {}".format(self.fun, self.name))
-
     @staticmethod
     def function(out, out_qp, geo, fmode):
         status = geo.integrate(out, out_qp)
@@ -456,7 +445,7 @@ class NonlinScalarDotGradTerm(Term):
 
         if diff_var is None:
             if self.mode == 'grad_state':
-                # TODO chceck correct shapes for integration
+                # TODO check correct shapes for integration
                 geo = vg1
                 bf_t = vg1.bf.transpose((0, 1, 3, 2))
                 val_qp = dfun(self.get(var2, 'val')[..., 0])
@@ -465,7 +454,6 @@ class NonlinScalarDotGradTerm(Term):
                 out_qp = dot_sequences(bf_t, val_grad_qp, 'ATB')
 
             else:
-                # TODO chceck correct shapes for integration
                 geo = vg2
                 val_qp = fun(self.get(var1, 'val'))[..., 0, :].swapaxes(-2, -1)
                 out_qp = dot_sequences(vg2.bfg, val_qp, 'ATB')
