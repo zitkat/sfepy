@@ -344,8 +344,6 @@ class EquationMap(Struct):
         if bcs is None:
             return set()
 
-
-
         eq_ebc = nm.zeros((self.var_di.n_dof,), dtype=nm.int32)
         val_ebc = nm.zeros((self.var_di.n_dof,), dtype=field.dtype)
         master_slave = nm.zeros((self.var_di.n_dof,), dtype=nm.int32)
@@ -373,7 +371,6 @@ class EquationMap(Struct):
                 region = bc.regions[0]
 
             # output("Treating {} {}".format(ntype, bc.name))
-
 
             if warn:
                 clean_msg = ('warning: ignoring nonexistent %s node (%s) in '
