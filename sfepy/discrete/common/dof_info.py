@@ -411,7 +411,7 @@ class EquationMap(Struct):
                                             bc=bc, problem=problem)
 
                 values = field.get_bc_facet_values(fun, region, diff=bc.diff)
-                bc2bfi = field.get_facet_boundary_index(region)
+                bc2bfi = field.get_bc_facet_idx(region)
 
                 self.dg_ebc_val.setdefault(bc.diff, []).append(values)
                 self.dg_ebc.setdefault(bc.diff, []).append(bc2bfi)
@@ -419,8 +419,8 @@ class EquationMap(Struct):
             elif ntype == "DGEPBC":
 
                 # TODO ensure matching boundaries!
-                master_bc2bfi = field.get_facet_boundary_index(region)
-                slave_bc2bfi = field.get_facet_boundary_index(bc.regions[1])
+                master_bc2bfi = field.get_bc_facet_idx(region)
+                slave_bc2bfi = field.get_bc_facet_idx(bc.regions[1])
 
                 self.dg_epbc.append((master_bc2bfi, slave_bc2bfi))
 
