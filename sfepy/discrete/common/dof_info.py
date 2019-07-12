@@ -423,6 +423,7 @@ class EquationMap(Struct):
                 slave_bc2bfi = field.get_bc_facet_idx(bc.regions[1])
 
                 self.dg_epbc.append((master_bc2bfi, slave_bc2bfi))
+                self.n_dg_epbc += 1
 
             else: # EPBC.
                 region = bc.regions[1]
