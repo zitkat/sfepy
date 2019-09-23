@@ -621,7 +621,8 @@ class Problem(Struct):
         graph_changed = self.equations.time_update(self.ts,
                                                    ebcs, epbcs, lcbcs,
                                                    functions, self,
-                                                   active_only=ac)
+                                                   active_only=ac,
+                                                   verbose=self.conf.verbose)
         self.graph_changed = graph_changed
 
         if (is_matrix
@@ -775,7 +776,7 @@ class Problem(Struct):
     def init_time(self, ts):
         self.update_time_stepper(ts)
         self.equations.init_time(ts)
-        self.update_materials(mode='force')
+        self.update_materials(mode='force', verbose=self.conf.verbose)
 
         self._restart_filenames = []
 
@@ -1243,7 +1244,7 @@ class Problem(Struct):
                 state.apply_ebc()
 
             if update_materials:
-                self.update_materials()
+                self.update_materials(verbose=self.conf.verbose)
 
         def poststep_fun(ts, vec):
             state = state0.copy(preserve_caches=True)
